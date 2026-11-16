@@ -58,7 +58,6 @@
     </script>
 
     <style>
-        /* Custom Scrollbar & Base Tweaks */
         body {
             background-color: #0A0A0B;
             color: #FFFFFF;
@@ -71,7 +70,6 @@
             line-height: 1.6;
         }
 
-        /* Hide scrollbars for horizontal tabs */
         .no-scrollbar::-webkit-scrollbar {
             display: none;
         }
@@ -80,7 +78,6 @@
             scrollbar-width: none;
         }
 
-        /* Glassmorphism subtle overlay */
         .glass-panel {
             background: rgba(20, 20, 22, 0.85);
             backdrop-filter: blur(12px);
@@ -228,6 +225,33 @@
                     <div id="tipBox" class="hidden rounded-xl bg-black/40 px-3 py-2 text-xs text-zinc-400 flex items-start gap-2">
                         <i class="ph-fill ph-sparkle text-brand-orange shrink-0 mt-0.5"></i>
                         <span id="tipTextDisplay"></span>
+                    </div>
+
+                    <!-- Live Speaking Visual Indicator -->
+                    <div id="speakingIndicator" class="hidden rounded-xl bg-brand-orange/15 border border-brand-orange/40 px-3.5 py-2.5 flex items-center justify-between">
+                        <div class="flex items-center gap-2.5">
+                            <div class="flex items-center gap-1 h-4">
+                                <span class="w-1 bg-brand-orange rounded-full animate-wave" style="animation-delay: 0.0s"></span>
+                                <span class="w-1 bg-brand-orange rounded-full animate-wave" style="animation-delay: 0.2s"></span>
+                                <span class="w-1 bg-brand-orange rounded-full animate-wave" style="animation-delay: 0.4s"></span>
+                            </div>
+                            <span id="speakingIndicatorText" class="text-xs font-bold text-brand-orange">Falando em tailandês...</span>
+                        </div>
+                        <button onclick="stopAllAudio()" class="text-[11px] font-bold uppercase tracking-wider text-zinc-300 hover:text-white px-2 py-0.5 rounded bg-black/40">
+                            Parar
+                        </button>
+                    </div>
+
+                    <!-- Explicit Action Row: Listen Normal & Listen Slow -->
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <button onclick="replayCurrentAudio(1.0)" class="py-2.5 px-3 rounded-xl bg-brand-orange hover:bg-brand-orangeHover active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-brand-orange/20 transition">
+                            <i class="ph-fill ph-speaker-high text-base"></i>
+                            <span>Ouvir Tradução</span>
+                        </button>
+                        <button onclick="replayCurrentAudio(0.65)" class="py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-brand-border active:scale-[0.98] text-zinc-200 font-semibold text-xs flex items-center justify-center gap-1.5 transition">
+                            <i class="ph-bold ph-turtle text-base text-brand-orange"></i>
+                            <span>Ouvir Devagar (0.65x)</span>
+                        </button>
                     </div>
                 </div>
 
@@ -469,6 +493,18 @@
                 </a>
             </div>
 
+            <!-- Built-in Audio Diagnostic / Test Button -->
+            <div class="rounded-2xl bg-zinc-900/90 border border-brand-border p-3.5 flex items-center justify-between gap-3">
+                <div>
+                    <p class="text-xs font-bold text-white">Teste de Som (Tailandês)</p>
+                    <p id="voiceEngineStatusText" class="text-[11px] text-zinc-400">Valide o áudio no seu aparelho</p>
+                </div>
+                <button onclick="testThaiAudioInSettings()" class="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-brand-orange text-white text-xs font-bold border border-brand-border hover:border-brand-orange transition flex items-center gap-1.5 shrink-0">
+                    <i class="ph-fill ph-speaker-high text-sm"></i>
+                    <span>Testar Áudio</span>
+                </button>
+            </div>
+
             <div class="flex gap-2.5 pt-2">
                 <button onclick="clearApiKey()" class="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-brand-border text-xs font-semibold text-zinc-300 transition">
                     Limpar Chave
@@ -485,174 +521,142 @@
         // =========================================================================
         // 1. STATE & CONFIGURATION
         // =========================================================================
-        const DEFAULT_ENV_KEY = ""; // Runtime key provided automatically in preview environment
+        const DEFAULT_ENV_KEY = "";
         const GEMINI_MODEL = "gemini-2.5-flash";
-
-        function escapeHtml(value = '') {
-            return String(value)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        function unlockAudioContext() {
-            try {
-                if (!window.AudioContext && !window.webkitAudioContext) return;
-                if (!window.__thaiTripAudioCtx) {
-                    window.__thaiTripAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-                if (window.__thaiTripAudioCtx.state === 'suspended') {
-                    window.__thaiTripAudioCtx.resume();
-                }
-            } catch (err) {
-                console.warn('Audio unlock failed:', err);
-            }
-        }
 
         let appState = {
             apiKey: localStorage.getItem('thaitrip_gemini_key') || DEFAULT_ENV_KEY,
-            speakerGender: localStorage.getItem('thaitrip_gender') || 'female', // 'female' (kha) or 'male' (khrap)
-            speechRate: 1.0, // 1.0 (normal) or 0.65 (slow)
+            politeGender: localStorage.getItem('thaitrip_gender') || 'female',
+            speechRate: 1.0,
             manualDirection: 'PT-TH',
-            currentTranslation: {
-                direction: 'PT-TH',
-                sourceText: 'Olá! Quanto custa isso, por favor?',
-                targetText: 'สวัสดีค่ะ อันนี้ราคาเท่าไหร่คะ',
-                phonetic: 'Sa-wat-di kha. An-ni ra-kha thao-rai kha?',
-                targetLangCode: 'th-TH'
-            },
+            currentAudioText: 'สวัสดีค่ะ อันนี้ราคาเท่าไหร่คะ',
+            currentAudioLang: 'th-TH',
+            currentCopyText: 'สวัสดีค่ะ อันนี้ราคาเท่าไหร่คะ (Sa-wat-di kha. An-ni ra-kha thao-rai kha?)',
+            currentPhotoResultText: '',
             history: JSON.parse(localStorage.getItem('thaitrip_history') || '[]'),
             isListening: false
         };
 
-        let recognition = null;
-        let availableVoices = [];
-
         // =========================================================================
-        // 2. OFFLINE ESSENTIAL PHRASES DATABASE (TAILÂNDIA)
+        // 2. OFFLINE ESSENTIAL PHRASES DATABASE
         // =========================================================================
         const ESSENTIAL_PHRASES = [
             {
-                id: 'no-spicy-allergy',
                 category: 'food',
-                highlight: true,
-                pt: 'Sem pimenta, por favor! Tenho alergia forte a comida apimentada.',
-                th_f: 'ไม่ใส่พริกนะคะ แพ้อาหารเผ็ดมากค่ะ',
-                phonetic_f: 'Mai sai phrik na kha. Phae a-han phet mak kha',
-                th_m: 'ไม่ใส่พริกนะครับ แพ้อาหารเผ็ดมากครับ',
-                phonetic_m: 'Mai sai phrik na khrap. Phae a-han phet mak khrap'
+                pt: 'Sem pimenta, por favor! Sou alérgica a pimenta.',
+                th_fem: 'ไม่ใส่พริกนะคะ แพ้พริกค่ะ',
+                phonetic_fem: 'Mai sai phrik na kha. Phae phrik kha.',
+                th_male: 'ไม่ใส่พริกนะครับ แพ้พริกครับ',
+                phonetic_male: 'Mai sai phrik na khrap. Phae phrik khrap.',
+                highlight: true
             },
             {
-                id: 'not-spicy-at-all',
                 category: 'food',
-                highlight: true,
-                pt: 'Nada apimentado (zero pimenta).',
-                th_f: 'ไม่เผ็ดเลยค่ะ',
-                phonetic_f: 'Mai phet loei kha',
-                th_m: 'ไม่เผ็ดเลยครับ',
-                phonetic_m: 'Mai phet loei khrap'
+                pt: 'Não apimentado (nada picante).',
+                th_fem: 'ไม่เผ็ดเลยค่ะ',
+                phonetic_fem: 'Mai phet loei kha.',
+                th_male: 'ไม่เผ็ดเลยครับ',
+                phonetic_male: 'Mai phet loei khrap.',
+                highlight: true
             },
             {
-                id: 'hello-thanks',
-                category: 'shopping',
-                highlight: false,
-                pt: 'Olá / Muito obrigado(a)',
-                th_f: 'สวัสดีค่ะ / ขอบคุณมากค่ะ',
-                phonetic_f: 'Sa-wat-di kha / Khop-khun mak kha',
-                th_m: 'สวัสดีครับ / ขอบคุณมากครับ',
-                phonetic_m: 'Sa-wat-di khrap / Khop-khun mak khrap'
-            },
-            {
-                id: 'how-much',
-                category: 'shopping',
-                highlight: false,
-                pt: 'Quanto custa isso?',
-                th_f: 'อันนี้ราคาเท่าไหร่คะ',
-                phonetic_f: 'An-ni ra-kha thao-rai kha?',
-                th_m: 'อันนี้ราคาเท่าไหร่ครับ',
-                phonetic_m: 'An-ni ra-kha thao-rai khrap?'
-            },
-            {
-                id: 'discount',
-                category: 'shopping',
-                highlight: false,
-                pt: 'Pode fazer um desconto?',
-                th_f: 'ลดราคาได้ไหมคะ',
-                phonetic_f: 'Lot ra-kha dai mai kha?',
-                th_m: 'ลดราคาได้ไหมครับ',
-                phonetic_m: 'Lot ra-kha dai mai khrap?'
-            },
-            {
-                id: 'check-please',
                 category: 'food',
-                highlight: false,
                 pt: 'A conta, por favor.',
-                th_f: 'เก็บเงินด้วยค่ะ',
-                phonetic_f: 'Kep ngoen duai kha',
-                th_m: 'เก็บเงินด้วยครับ',
-                phonetic_m: 'Kep ngoen duai khrap'
+                th_fem: 'เก็บเงินด้วยค่ะ',
+                phonetic_fem: 'Kep ngoen duai kha.',
+                th_male: 'เก็บเงินด้วยครับ',
+                phonetic_male: 'Kep ngoen duai khrap.',
+                highlight: false
             },
             {
-                id: 'no-ice',
                 category: 'food',
-                highlight: false,
-                pt: 'Sem gelo, por favor.',
-                th_f: 'ไม่ใส่น้ำแข็งค่ะ',
-                phonetic_f: 'Mai sai nam-khaeng kha',
-                th_m: 'ไม่ใส่น้ำแข็งครับ',
-                phonetic_m: 'Mai sai nam-khaeng khrap'
+                pt: 'Uma garrafa de água, por favor.',
+                th_fem: 'ขอน้ำเปล่าหนึ่งขวดค่ะ',
+                phonetic_fem: 'Kho nam plao nueng khuat kha.',
+                th_male: 'ขอน้ำเปล่าหนึ่งขวดครับ',
+                phonetic_male: 'Kho nam plao nueng khuat khrap.',
+                highlight: false
             },
             {
-                id: 'bathroom',
-                category: 'transport',
-                highlight: false,
-                pt: 'Onde fica o banheiro?',
-                th_f: 'ห้องน้ำอยู่ที่ไหนคะ',
-                phonetic_f: 'Hong-nam yu thi-nai kha?',
-                th_m: 'ห้องน้ำอยู่ที่ไหนครับ',
-                phonetic_m: 'Hong-nam yu thi-nai khrap?'
+                category: 'food',
+                pt: 'Estava delicioso! Obrigada.',
+                th_fem: 'อร่อยมากค่ะ ขอบคุณค่ะ',
+                phonetic_fem: 'A-roi mak kha. Khop-khun kha.',
+                th_male: 'อร่อยมากครับ ขอบคุณครับ',
+                phonetic_male: 'A-roi mak khrap. Khop-khun khrap.',
+                highlight: false
             },
             {
-                id: 'use-meter',
-                category: 'transport',
-                highlight: false,
-                pt: 'Por favor, ligue o taxímetro.',
-                th_f: 'ช่วยเปิดมิเตอร์ด้วยค่ะ',
-                phonetic_f: 'Chuai poert mi-toer duai kha',
-                th_m: 'ช่วยเปิดมิเตอร์ด้วยครับ',
-                phonetic_m: 'Chuai poert mi-toer duai khrap'
-            },
-            {
-                id: 'go-hotel',
-                category: 'transport',
-                highlight: false,
-                pt: 'Por favor, me leve para este endereço.',
-                th_f: 'ช่วยไปส่งตามที่อยู่นี้หน่อยค่ะ',
-                phonetic_f: 'Chuai pai song tam thi-yu ni noi kha',
-                th_m: 'ช่วยไปส่งตามที่อยู่นี้หน่อยครับ',
-                phonetic_m: 'Chuai pai song tam thi-yu ni noi khrap'
-            },
-            {
-                id: 'card-payment',
                 category: 'shopping',
-                highlight: false,
-                pt: 'Aceita cartão de crédito?',
-                th_f: 'รับบัตรเครดิตไหมคะ',
-                phonetic_f: 'Rap bat khre-dit mai kha?',
-                th_m: 'รับบัตรเครดิตไหมครับ',
-                phonetic_m: 'Rap bat khre-dit mai khrap?'
+                pt: 'Olá! Quanto custa isso?',
+                th_fem: 'สวัสดีค่ะ อันนี้ราคาเท่าไหร่คะ',
+                phonetic_fem: 'Sa-wat-di kha. An-ni ra-kha thao-rai kha?',
+                th_male: 'สวัสดีครับ อันนี้ราคาเท่าไหร่ครับ',
+                phonetic_male: 'Sa-wat-di khrap. An-ni ra-kha thao-rai khrap?',
+                highlight: false
             },
             {
-                id: 'help-hospital',
+                category: 'shopping',
+                pt: 'Pode fazer um desconto?',
+                th_fem: 'ลดราคาได้ไหมคะ',
+                phonetic_fem: 'Lot ra-kha dai mai kha?',
+                th_male: 'ลดราคาได้ไหมครับ',
+                phonetic_male: 'Lot ra-kha dai mai khrap?',
+                highlight: false
+            },
+            {
+                category: 'shopping',
+                pt: 'Aceita cartão de crédito?',
+                th_fem: 'รับบัตรเครดิตไหมคะ',
+                phonetic_fem: 'Rap bat khre-dit mai kha?',
+                th_male: 'รับบัตรเครดิตไหมครับ',
+                phonetic_male: 'Rap bat khre-dit mai khrap?',
+                highlight: false
+            },
+            {
+                category: 'transport',
+                pt: 'Por favor, ligue o taxímetro.',
+                th_fem: 'กรุณาเปิดมิเตอร์ด้วยค่ะ',
+                phonetic_fem: 'Ka-ru-na poet mi-toe duai kha.',
+                th_male: 'กรุณาเปิดมิเตอร์ด้วยครับ',
+                phonetic_male: 'Ka-ru-na poet mi-toe duai khrap.',
+                highlight: false
+            },
+            {
+                category: 'transport',
+                pt: 'Por favor, me leve para este endereço.',
+                th_fem: 'กรุณาไปส่งที่อยู่นี้ค่ะ',
+                phonetic_fem: 'Ka-ru-na pai song thi-yu ni kha.',
+                th_male: 'กรุณาไปส่งที่อยู่นี้ครับ',
+                phonetic_male: 'Ka-ru-na pai song thi-yu ni khrap.',
+                highlight: false
+            },
+            {
+                category: 'transport',
+                pt: 'Onde fica o banheiro?',
+                th_fem: 'ห้องน้ำอยู่ที่ไหนคะ',
+                phonetic_fem: 'Hong-nam yu thi-nai kha?',
+                th_male: 'ห้องน้ำอยู่ที่ไหนครับ',
+                phonetic_male: 'Hong-nam yu thi-nai khrap?',
+                highlight: false
+            },
+            {
                 category: 'emergency',
-                highlight: true,
-                pt: 'Preciso de ajuda! Onde fica o hospital mais próximo?',
-                th_f: 'ช่วยด้วยค่ะ โรงพยาบาลที่ใกล้ที่สุดอยู่ที่ไหนคะ',
-                phonetic_f: 'Chuai duai kha! Rong-pha-ya-ban thi klai thi-sut yu thi-nai kha?',
-                th_m: 'ช่วยด้วยครับ โรงพยาบาลที่ใกล้ที่สุดอยู่ที่ไหนครับ',
-                phonetic_m: 'Chuai duai khrap! Rong-pha-ya-ban thi klai thi-sut yu thi-nai khrap?'
+                pt: 'Preciso ir ao hospital / farmácia.',
+                th_fem: 'ฉันต้องไปโรงพยาบาล / ร้านขายยาค่ะ',
+                phonetic_fem: 'Chan tong pai rong-pha-ya-ban / ran-khai-ya kha.',
+                th_male: 'ผมต้องไปโรงพยาบาล / ร้านขายยาครับ',
+                phonetic_male: 'Phom tong pai rong-pha-ya-ban / ran-khai-ya khrap.',
+                highlight: false
+            },
+            {
+                category: 'emergency',
+                pt: 'Estou tendo uma reação alérgica.',
+                th_fem: 'ฉันมีอาการแพ้อาหารค่ะ',
+                phonetic_fem: 'Chan mi a-kan phae a-han kha.',
+                th_male: 'ผมมีอาการแพ้อาหารครับ',
+                phonetic_male: 'Phom mi a-kan phae a-han khrap.',
+                highlight: false
             }
         ];
 
@@ -662,10 +666,14 @@
         window.addEventListener('DOMContentLoaded', () => {
             updateGenderUI();
             updateApiStatusIndicator();
-            renderPhrases('all');
-            renderHistory();
             initSpeechSynthesis();
             initSpeechRecognition();
+            renderPhrases('all');
+            renderHistory();
+
+            if (!getActiveApiKey()) {
+                showToast('Toque na engrenagem (⚙️) no topo direito para colar sua chave gratuita da API Gemini.', 'warning');
+            }
         });
 
         function showToast(message, type = 'info') {
@@ -676,19 +684,19 @@
                 info: 'bg-zinc-900 border-brand-border text-white',
                 success: 'bg-emerald-950/95 border-emerald-500/50 text-emerald-100',
                 error: 'bg-red-950/95 border-red-500/50 text-red-100',
-                warning: 'bg-brand-orange text-white border-brand-orange'
+                warning: 'bg-amber-950/95 border-amber-500/50 text-amber-100'
             };
 
             const icons = {
-                info: 'ph-info',
-                success: 'ph-check-circle',
-                error: 'ph-warning-circle',
-                warning: 'ph-speaker-high'
+                info: 'ph-info text-brand-orange',
+                success: 'ph-check-circle text-emerald-400',
+                error: 'ph-warning-circle text-red-400',
+                warning: 'ph-warning text-amber-400'
             };
 
-            toast.className = `pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl flex items-center gap-2.5 text-xs font-semibold transition-all duration-300 transform translate-y-0 opacity-100 ${colors[type] || colors.info}`;
+            toast.className = `pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl flex items-center gap-3 text-xs font-medium transition-all duration-300 transform translate-y-0 ${colors[type] || colors.info}`;
             toast.innerHTML = `
-                <i class="ph-fill ${icons[type] || icons.info} text-base shrink-0"></i>
+                <i class="ph-fill ${icons[type] || icons.info} text-lg shrink-0"></i>
                 <span class="flex-1 leading-snug">${message}</span>
             `;
 
@@ -697,76 +705,93 @@
                 toast.style.opacity = '0';
                 toast.style.transform = 'translateY(-8px)';
                 setTimeout(() => toast.remove(), 300);
-            }, 3500);
+            }, 4200);
         }
 
         function switchTab(tabName) {
-            // Hide all tabs
             ['voice', 'camera', 'phrases'].forEach(t => {
-                document.getElementById(`tab-${t}`).classList.add('hidden');
-                const navBtn = document.getElementById(`nav-${t}`);
-                navBtn.classList.remove('bg-brand-orange/15', 'text-brand-orange', 'font-bold');
-                navBtn.classList.add('text-zinc-400', 'font-medium');
+                const section = document.getElementById(`tab-${t}`);
+                const btn = document.getElementById(`nav-${t}`);
+                if (t === tabName) {
+                    section.classList.remove('hidden');
+                    btn.classList.add('bg-brand-orange/15', 'text-brand-orange', 'font-bold');
+                    btn.classList.remove('text-zinc-400', 'font-medium');
+                } else {
+                    section.classList.add('hidden');
+                    btn.classList.remove('bg-brand-orange/15', 'text-brand-orange', 'font-bold');
+                    btn.classList.add('text-zinc-400', 'font-medium');
+                }
             });
-
-            // Show selected tab
-            document.getElementById(`tab-${tabName}`).classList.remove('hidden');
-            const activeNav = document.getElementById(`nav-${tabName}`);
-            activeNav.classList.add('bg-brand-orange/15', 'text-brand-orange', 'font-bold');
-            activeNav.classList.remove('text-zinc-400', 'font-medium');
         }
 
         function togglePoliteParticle() {
-            appState.speakerGender = appState.speakerGender === 'female' ? 'male' : 'female';
-            localStorage.setItem('thaitrip_gender', appState.speakerGender);
+            appState.politeGender = appState.politeGender === 'female' ? 'male' : 'female';
+            localStorage.setItem('thaitrip_gender', appState.politeGender);
             updateGenderUI();
-            renderPhrases('all');
+            renderPhrases(currentPhraseCategory);
             showToast(
-                appState.speakerGender === 'female' 
-                    ? 'Modo Feminino ativo: frases terminam com "Kha" (ค่ะ/คะ)' 
-                    : 'Modo Masculino ativo: frases terminam com "Khrap" (ครับ)',
+                appState.politeGender === 'female' 
+                    ? 'Modo Feminino ativado: frases terminam com "Kha" (ค่ะ/คะ)' 
+                    : 'Modo Masculino ativado: frases terminam com "Khrap" (ครับ)',
                 'info'
             );
         }
 
         function updateGenderUI() {
             const label = document.getElementById('genderLabel');
-            label.textContent = appState.speakerGender === 'female' ? 'Kha (Fem)' : 'Khrap (Masc)';
+            label.textContent = appState.politeGender === 'female' ? 'Kha (Fem)' : 'Khrap (Masc)';
         }
 
         function toggleSpeechSpeed() {
             appState.speechRate = appState.speechRate === 1.0 ? 0.65 : 1.0;
-            document.getElementById('speedLabel').textContent = appState.speechRate === 1.0 ? '1.0x Normal' : '0.65x Lento';
-            showToast(`Velocidade do áudio: ${appState.speechRate === 1.0 ? 'Normal' : 'Lenta (didática)'}`, 'info');
+            const speedLabel = document.getElementById('speedLabel');
+            speedLabel.textContent = appState.speechRate === 1.0 ? '1.0x Normal' : '0.65x Devagar';
+            showToast(`Velocidade da voz: ${speedLabel.textContent}`, 'info');
         }
 
         function setManualDirection(dir) {
             appState.manualDirection = dir;
-            const btnPtTh = document.getElementById('manualDirPtTh');
-            const btnThPt = document.getElementById('manualDirThPt');
+            const ptBtn = document.getElementById('manualDirPtTh');
+            const thBtn = document.getElementById('manualDirThPt');
             const input = document.getElementById('manualTextInput');
 
             if (dir === 'PT-TH') {
-                btnPtTh.className = 'px-2 py-1 rounded-md bg-brand-orange text-white transition';
-                btnThPt.className = 'px-2 py-1 rounded-md text-zinc-400 hover:text-white transition';
+                ptBtn.className = 'px-2 py-1 rounded-md bg-brand-orange text-white transition';
+                thBtn.className = 'px-2 py-1 rounded-md text-zinc-400 hover:text-white transition';
                 input.placeholder = 'Digite em português para traduzir...';
             } else {
-                btnThPt.className = 'px-2 py-1 rounded-md bg-brand-orange text-white transition';
-                btnPtTh.className = 'px-2 py-1 rounded-md text-zinc-400 hover:text-white transition';
+                thBtn.className = 'px-2 py-1 rounded-md bg-brand-orange text-white transition';
+                ptBtn.className = 'px-2 py-1 rounded-md text-zinc-400 hover:text-white transition';
                 input.placeholder = 'Cole ou digite texto em tailandês (ไทย)...';
             }
         }
 
         // =========================================================================
-        // 4. SETTINGS MODAL (API KEY MANAGEMENT FOR GITHUB PAGES)
+        // 4. SETTINGS & API KEY MANAGEMENT
         // =========================================================================
+        function getActiveApiKey() {
+            return (appState.apiKey || '').trim();
+        }
+
+        function updateApiStatusIndicator() {
+            const dot = document.getElementById('apiStatusDot');
+            if (getActiveApiKey()) {
+                dot.className = 'absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500';
+            } else {
+                dot.className = 'absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500 animate-ping';
+            }
+        }
+
         function openSettingsModal() {
             document.getElementById('geminiApiKeyInput').value = localStorage.getItem('thaitrip_gemini_key') || '';
+            const statusText = document.getElementById('voiceEngineStatusText');
+            if (statusText) {
+                const hasThaiLocal = availableVoices.some(v => v.lang && v.lang.toLowerCase().includes('th'));
+                statusText.textContent = hasThaiLocal
+                    ? 'Voz tailandesa nativa detectada + backup online ativo'
+                    : 'Modo híbrido ativo (áudio online para tailandês)';
+            }
             document.getElementById('settingsModal').classList.remove('hidden');
-            setTimeout(() => {
-                const input = document.getElementById('geminiApiKeyInput');
-                if (input) input.focus();
-            }, 50);
         }
 
         function closeSettingsModal() {
@@ -778,11 +803,11 @@
             if (val) {
                 localStorage.setItem('thaitrip_gemini_key', val);
                 appState.apiKey = val;
-                showToast('Chave API salva no seu dispositivo!', 'success');
+                showToast('Chave API salva com sucesso no seu dispositivo!', 'success');
             } else {
                 localStorage.removeItem('thaitrip_gemini_key');
                 appState.apiKey = DEFAULT_ENV_KEY;
-                showToast('Usando configuração padrão do ambiente.', 'info');
+                showToast('Chave personalizada removida.', 'info');
             }
             updateApiStatusIndicator();
             closeSettingsModal();
@@ -793,23 +818,23 @@
             document.getElementById('geminiApiKeyInput').value = '';
             appState.apiKey = DEFAULT_ENV_KEY;
             updateApiStatusIndicator();
-            showToast('Chave removida do navegador.', 'info');
+            showToast('Chave API removida do navegador.', 'info');
         }
 
-        function updateApiStatusIndicator() {
-            const dot = document.getElementById('apiStatusDot');
-            const hasStoredKey = Boolean(localStorage.getItem('thaitrip_gemini_key'));
-            const isPreviewKey = Boolean(DEFAULT_ENV_KEY);
-            dot.className = `absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${hasStoredKey || isPreviewKey ? 'bg-emerald-500' : 'bg-amber-500'}`;
-        }
-
-        function getActiveApiKey() {
-            return localStorage.getItem('thaitrip_gemini_key') || DEFAULT_ENV_KEY;
+        function testThaiAudioInSettings() {
+            unlockAudioContext();
+            speakText('สวัสดีค่ะ ยินดีต้อนรับสู่ประเทศไทย', 'th-TH', 1.0);
+            showToast('Reproduzindo saudação em tailandês ("Sa-wat-di kha...")...', 'info');
         }
 
         // =========================================================================
-        // 5. TEXT-TO-SPEECH (WEB SPEECH SYNTHESIS: TH-TH & PT-BR)
+        // 5. HYBRID TEXT-TO-SPEECH ENGINE (NATIVE + ONLINE FALLBACK FOR GITHUB PAGES)
         // =========================================================================
+        let availableVoices = [];
+        let unlockedAudioCtx = null;
+        let activeFallbackAudio = null;
+        let activeFallbackAbort = false;
+
         function initSpeechSynthesis() {
             if (!('speechSynthesis' in window)) return;
             const loadVoices = () => {
@@ -819,198 +844,344 @@
             window.speechSynthesis.onvoiceschanged = loadVoices;
         }
 
-        function speakText(text, langCode) {
-            unlockAudioContext();
+        function unlockAudioContext() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (AudioCtx) {
+                    if (!unlockedAudioCtx) {
+                        unlockedAudioCtx = new AudioCtx();
+                    }
+                    if (unlockedAudioCtx.state === 'suspended') {
+                        unlockedAudioCtx.resume();
+                    }
+                }
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.resume();
+                }
+                if (!activeFallbackAudio) {
+                    activeFallbackAudio = new Audio();
+                    activeFallbackAudio.setAttribute('playsinline', '');
+                    activeFallbackAudio.setAttribute('referrerpolicy', 'no-referrer');
+                }
+                activeFallbackAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+                activeFallbackAudio.play().then(() => {
+                    activeFallbackAudio.pause();
+                }).catch(() => {});
+            } catch (e) {
+                console.warn('Audio unlock warning:', e);
+            }
+        }
+
+        function setSpeakingVisualState(isSpeaking, langCode = 'th-TH') {
+            const indicator = document.getElementById('speakingIndicator');
+            const indicatorText = document.getElementById('speakingIndicatorText');
+            const replayBtn = document.getElementById('replayAudioBtn');
+
+            if (!indicator || !replayBtn) return;
+
+            if (isSpeaking) {
+                const isThai = langCode.toLowerCase().startsWith('th');
+                indicatorText.textContent = isThai ? 'Falando em tailandês...' : 'Falando em português...';
+                indicator.classList.remove('hidden');
+                replayBtn.classList.add('animate-pulse-ring');
+            } else {
+                indicator.classList.add('hidden');
+                replayBtn.classList.remove('animate-pulse-ring');
+            }
+        }
+
+        function stopAllAudio() {
+            activeFallbackAbort = true;
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+            if (activeFallbackAudio) {
+                try {
+                    activeFallbackAudio.pause();
+                    activeFallbackAudio.currentTime = 0;
+                } catch (e) {}
+            }
+            setSpeakingVisualState(false);
+        }
+
+        function splitTextIntoTtsChunks(text, maxLen = 160) {
+            const clean = (text || '').replace(/\s+/g, ' ').trim();
+            if (!clean) return [];
+            if (clean.length <= maxLen) return [clean];
+
+            const parts = clean.split(/(?<=[.!?।ฯ\n])\s+/);
+            const chunks = [];
+            let current = '';
+
+            for (const part of parts) {
+                if ((current + ' ' + part).trim().length <= maxLen) {
+                    current = (current + ' ' + part).trim();
+                } else {
+                    if (current) chunks.push(current);
+                    if (part.length > maxLen) {
+                        for (let i = 0; i < part.length; i += maxLen) {
+                            chunks.push(part.slice(i, i + maxLen));
+                        }
+                        current = '';
+                    } else {
+                        current = part;
+                    }
+                }
+            }
+            if (current) chunks.push(current);
+            return chunks;
+        }
+
+        async function playOnlineTtsFallback(text, langCode, customRate = null) {
+            activeFallbackAbort = false;
+            const rate = customRate !== null ? customRate : appState.speechRate;
+            const tl = langCode.toLowerCase().startsWith('th') ? 'th' : 'pt';
+            const chunks = splitTextIntoTtsChunks(text, 160);
+
+            setSpeakingVisualState(true, langCode);
+
+            try {
+                for (const chunk of chunks) {
+                    if (activeFallbackAbort) break;
+
+                    await new Promise((resolve, reject) => {
+                        const encoded = encodeURIComponent(chunk);
+                        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=${tl}&q=${encoded}`;
+
+                        const audioEl = new Audio();
+                        audioEl.setAttribute('playsinline', '');
+                        audioEl.setAttribute('referrerpolicy', 'no-referrer');
+                        activeFallbackAudio = audioEl;
+
+                        audioEl.src = ttsUrl;
+                        audioEl.playbackRate = rate;
+
+                        audioEl.onended = () => resolve();
+                        audioEl.onerror = (err) => reject(err);
+
+                        const playPromise = audioEl.play();
+                        if (playPromise !== undefined) {
+                            playPromise.catch(err => reject(err));
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn('Online TTS fallback failed:', err);
+                showToast('Seu navegador bloqueou o som automático. Toque no botão laranja "Ouvir Tradução".', 'warning');
+            } finally {
+                setSpeakingVisualState(false);
+            }
+        }
+
+        function speakText(text, langCode, customRate = null) {
+            if (!text || !text.trim()) return;
+            stopAllAudio();
+
+            const rate = customRate !== null ? customRate : appState.speechRate;
+            const targetPrefix = langCode.split('-')[0].toLowerCase();
+
             if (!('speechSynthesis' in window)) {
-                showToast('Seu navegador não suporta reprodução de áudio.', 'error');
+                playOnlineTtsFallback(text, langCode, rate);
                 return;
             }
 
-            try {
-                window.speechSynthesis.cancel(); // Stop any ongoing speech
+            if (availableVoices.length === 0) {
+                availableVoices = window.speechSynthesis.getVoices();
+            }
 
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = langCode;
-                utterance.rate = appState.speechRate;
-                utterance.pitch = 1.0;
+            const exactVoice = availableVoices.find(v => v.lang && v.lang.toLowerCase() === langCode.toLowerCase());
+            const prefixVoice = availableVoices.find(v => v.lang && v.lang.toLowerCase().startsWith(targetPrefix));
+            const chosenVoice = exactVoice || prefixVoice;
 
-                // Try to select the best native voice for Thai or Portuguese
-                if (availableVoices.length === 0) {
-                    availableVoices = window.speechSynthesis.getVoices();
+            if (!chosenVoice && targetPrefix === 'th') {
+                playOnlineTtsFallback(text, langCode, rate);
+                return;
+            }
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = langCode;
+            utterance.rate = rate;
+            utterance.pitch = 1.0;
+            if (chosenVoice) {
+                utterance.voice = chosenVoice;
+            }
+
+            let speechStarted = false;
+            const watchdogTimer = setTimeout(() => {
+                if (!speechStarted) {
+                    window.speechSynthesis.cancel();
+                    playOnlineTtsFallback(text, langCode, rate);
                 }
+            }, 700);
 
-                const exactVoice = availableVoices.find(v => v.lang.toLowerCase().replace('_', '-') === langCode.toLowerCase());
-                const partialVoice = availableVoices.find(v => v.lang.toLowerCase().startsWith(langCode.split('-')[0].toLowerCase()));
-                
-                if (exactVoice) utterance.voice = exactVoice;
-                else if (partialVoice) utterance.voice = partialVoice;
-
-                // Visual pulse feedback on replay button
-                const replayBtn = document.getElementById('replayAudioBtn');
-                utterance.onstart = () => {
-                    if (replayBtn) replayBtn.classList.add('animate-pulse-ring');
-                };
-                utterance.onend = () => {
-                    if (replayBtn) replayBtn.classList.remove('animate-pulse-ring');
-                };
-                utterance.onerror = () => {
-                    if (replayBtn) replayBtn.classList.remove('animate-pulse-ring');
-                };
-
-                window.speechSynthesis.speak(utterance);
-            } catch (err) {
-                console.error('SpeechSynthesis error:', err);
-                showToast('Não foi possível reproduzir o áudio neste dispositivo.', 'error');
-            }
-        }
-
-        function replayCurrentAudio() {
-            unlockAudioContext();
-            const { targetText, targetLangCode } = appState.currentTranslation;
-            if (targetText) {
-                speakText(targetText, targetLangCode);
-            }
-        }
-
-        function triggerQuickPhrase(ptText, thText, phoneticText) {
-            unlockAudioContext();
-            appState.currentTranslation = {
-                direction: 'PT-TH',
-                sourceText: ptText,
-                targetText: thText,
-                phonetic: phoneticText,
-                targetLangCode: 'th-TH'
+            utterance.onstart = () => {
+                speechStarted = true;
+                clearTimeout(watchdogTimer);
+                setSpeakingVisualState(true, langCode);
             };
-            renderTranslationResult({
+
+            utterance.onend = () => {
+                clearTimeout(watchdogTimer);
+                setSpeakingVisualState(false);
+            };
+
+            utterance.onerror = () => {
+                clearTimeout(watchdogTimer);
+                setSpeakingVisualState(false);
+                if (!speechStarted) {
+                    playOnlineTtsFallback(text, langCode, rate);
+                }
+            };
+
+            window.speechSynthesis.resume();
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function replayCurrentAudio(customRate = null) {
+            unlockAudioContext();
+            speakText(appState.currentAudioText, appState.currentAudioLang, customRate);
+        }
+
+        function triggerQuickPhrase(ptText, thBaseText, phoneticBaseText) {
+            unlockAudioContext();
+            let thText = thBaseText;
+            let phoneticText = phoneticBaseText;
+
+            if (appState.politeGender === 'male') {
+                thText = thText.replace(/นะคะ/g, 'นะครับ').replace(/ค่ะ/g, 'ครับ').replace(/คะ/g, 'ครับ');
+                phoneticText = phoneticText.replace(/na kha/gi, 'na khrap').replace(/\bkha\b/gi, 'khrap');
+            }
+
+            updateResultCard({
                 direction: 'PT-TH',
                 sourceText: ptText,
-                targetText: thText,
+                targetMain: thText,
                 phonetic: phoneticText,
-                tip: 'Mostre esta tela ao garçom ou cozinheiro se precisar reforçar.'
+                tip: 'Mostre esta tela ao garçom ou cozinheiro enquanto o áudio toca.'
             });
+
             speakText(thText, 'th-TH');
         }
 
         // =========================================================================
-        // 6. SPEECH-TO-TEXT (WEB SPEECH RECOGNITION: PT-BR & TH-TH)
+        // 6. SPEECH RECOGNITION (BILATERAL VOICE CAPTURE)
         // =========================================================================
+        let recognition = null;
+        let activeRecognitionLang = 'pt-BR';
+
         function initSpeechRecognition() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
+                console.warn('Web Speech Recognition not supported in this browser.');
                 return;
             }
+
             recognition = new SpeechRecognition();
             recognition.continuous = false;
             recognition.interimResults = true;
             recognition.maxAlternatives = 1;
-        }
-
-        function startVoiceTranslation(langCode) {
-            unlockAudioContext();
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) {
-                showToast('Reconhecimento de voz não suportado neste navegador. Use o campo de digitação.', 'warning');
-                document.getElementById('manualTextInput').focus();
-                return;
-            }
-
-            if (appState.isListening && recognition) {
-                recognition.stop();
-                return;
-            }
-
-            // Stop any current TTS playback before listening
-            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-
-            recognition = new SpeechRecognition();
-            recognition.lang = langCode;
-            recognition.continuous = false;
-            recognition.interimResults = true;
-
-            const banner = document.getElementById('listeningBanner');
-            const langLabel = document.getElementById('listeningLangText');
-            const interimEl = document.getElementById('interimTranscript');
-
-            let finalCapturedText = '';
 
             recognition.onstart = () => {
                 appState.isListening = true;
-                banner.classList.remove('hidden');
-                langLabel.textContent = langCode === 'pt-BR' 
-                    ? 'Ouvindo você (Português)...' 
-                    : 'Ouvindo em Tailandês (กำลังฟังภาษาไทย)...';
-                interimEl.textContent = langCode === 'pt-BR' ? 'Fale agora...' : 'Pode aproximar o celular da pessoa...';
+                document.getElementById('listeningBanner').classList.remove('hidden');
+                document.getElementById('listeningLangText').textContent =
+                    activeRecognitionLang === 'pt-BR' ? 'Ouvindo em Português...' : 'กำลังฟังภาษาไทย (Ouvindo Tailandês)...';
+                document.getElementById('interimTranscript').textContent = 'Pode falar agora...';
             };
 
             recognition.onresult = (event) => {
                 let interim = '';
+                let finalTranscript = '';
+
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     if (event.results[i].isFinal) {
-                        finalCapturedText += event.results[i][0].transcript;
+                        finalTranscript += event.results[i][0].transcript;
                     } else {
                         interim += event.results[i][0].transcript;
                     }
                 }
-                interimEl.textContent = finalCapturedText || interim || 'Ouvindo...';
+
+                if (interim) {
+                    document.getElementById('interimTranscript').textContent = `"${interim}"`;
+                }
+
+                if (finalTranscript.trim()) {
+                    document.getElementById('interimTranscript').textContent = `"${finalTranscript}"`;
+                    stopRecognition();
+                    processTranslation(finalTranscript.trim(), activeRecognitionLang === 'pt-BR' ? 'PT-TH' : 'TH-PT');
+                }
             };
 
             recognition.onerror = (event) => {
-                appState.isListening = false;
-                banner.classList.add('hidden');
-                if (event.error === 'no-speech') {
-                    showToast('Nenhuma fala detectada. Tente novamente.', 'warning');
-                } else if (event.error === 'not-allowed') {
-                    showToast('Permissão de microfone negada. Ative nas configurações do navegador.', 'error');
+                console.error('Speech recognition error:', event.error);
+                stopRecognition();
+                if (event.error === 'not-allowed') {
+                    showToast('Permissão de microfone negada. Libere o microfone no navegador ou use o campo de digitação.', 'error');
+                } else if (event.error === 'no-speech') {
+                    showToast('Nenhuma fala detectada. Tente novamente mais perto do microfone.', 'warning');
                 } else {
-                    showToast('Erro ao captar áudio. Tente digitar ou falar novamente.', 'error');
+                    showToast(`Erro no microfone (${event.error}). Você também pode digitar abaixo.`, 'warning');
                 }
             };
 
             recognition.onend = () => {
                 appState.isListening = false;
-                banner.classList.add('hidden');
-                if (finalCapturedText.trim().length > 0) {
-                    const direction = langCode === 'pt-BR' ? 'PT-TH' : 'TH-PT';
-                    processTranslation(finalCapturedText.trim(), direction);
-                }
+                document.getElementById('listeningBanner').classList.add('hidden');
             };
+        }
+
+        function startVoiceTranslation(langCode) {
+            unlockAudioContext();
+            stopAllAudio();
+
+            if (!recognition) {
+                showToast('Reconhecimento de voz não suportado neste navegador. Use Chrome ou Safari, ou digite manualmente abaixo.', 'warning');
+                document.getElementById('manualTextInput').focus();
+                return;
+            }
+
+            if (appState.isListening) {
+                stopRecognition();
+            }
+
+            activeRecognitionLang = langCode;
+            recognition.lang = langCode;
 
             try {
                 recognition.start();
             } catch (e) {
-                console.error(e);
-                appState.isListening = false;
-                banner.classList.add('hidden');
+                console.warn('Recognition restart error:', e);
             }
         }
 
         function stopRecognition() {
             if (recognition && appState.isListening) {
-                recognition.stop();
+                try {
+                    recognition.stop();
+                } catch (e) {}
             }
+            appState.isListening = false;
+            document.getElementById('listeningBanner').classList.add('hidden');
         }
 
         function handleManualTranslate() {
             unlockAudioContext();
             const input = document.getElementById('manualTextInput');
             const text = input.value.trim();
-            if (!text) {
-                showToast('Digite alguma frase para traduzir.', 'warning');
-                return;
-            }
+            if (!text) return;
             input.value = '';
             processTranslation(text, appState.manualDirection);
         }
 
         // =========================================================================
-        // 7. GEMINI API INTEGRATION (TRANSLATION + PHONETICS + PHOTO VISION)
+        // 7. GEMINI API INTEGRATION (TRANSLATION, PHONETICS & PHOTO OCR)
         // =========================================================================
         async function fetchGeminiWithRetry(payload, maxRetries = 3) {
             const apiKey = getActiveApiKey();
             if (!apiKey) {
-                throw new Error('Configure sua chave API do Gemini nas configurações para usar a tradução inteligente.');
+                openSettingsModal();
+                throw new Error('Configure sua chave gratuita da API Gemini (ícone ⚙️) para traduzir.');
             }
-
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
             let delay = 1000;
@@ -1025,150 +1196,156 @@
                     if (!response.ok) {
                         const errData = await response.json().catch(() => ({}));
                         if (response.status === 400 || response.status === 403) {
-                            throw new Error(errData?.error?.message || 'Chave de API inválida ou ausente. Configure no ícone de engrenagem.');
+                            throw new Error(errData?.error?.message || 'Chave API inválida ou sem permissão. Verifique nas configurações (engrenagem).');
                         }
-                        if (attempt < maxRetries && (response.status === 429 || response.status >= 500)) {
-                            await new Promise(res => setTimeout(res, delay));
-                            delay *= 2;
-                            continue;
-                        }
-                        throw new Error(`Erro na API (${response.status})`);
+                        throw new Error(`HTTP ${response.status}`);
                     }
 
                     return await response.json();
                 } catch (err) {
-                    if (attempt === maxRetries) throw err;
+                    if (attempt === maxRetries || err.message.includes('Chave API')) {
+                        throw err;
+                    }
                     await new Promise(res => setTimeout(res, delay));
                     delay *= 2;
                 }
             }
         }
 
-        async function processTranslation(text, direction) {
+        async function processTranslation(inputText, direction) {
             const loader = document.getElementById('translationLoader');
             loader.classList.remove('hidden');
 
-            const isPtToTh = direction === 'PT-TH';
-            const particleGuide = appState.speakerGender === 'female' 
-                ? 'O falante é MULHER, portanto use sempre as partículas de cortesia femininas em tailandês: ค่ะ (kha) em afirmações e คะ (kha) em perguntas.'
-                : 'O falante é HOMEM, portanto use sempre a partícula de cortesia masculina em tailandês: ครับ (khrap).';
+            const genderInstruction = appState.politeGender === 'female'
+                ? 'O falante é MULHER, portanto use sempre as partículas educadas femininas do tailandês (ค่ะ / คะ - "kha") no final das frases.'
+                : 'O falante é HOMEM, portanto use sempre a partícula educada masculina do tailandês (ครับ - "khrap") no final das frases.';
 
-            const systemPrompt = isPtToTh
-                ? `Você é um intérprete especialista em viagens Brasil-Tailândia. Traduza a frase do Português (Brasil) para o Tailandês natural e educado.
-                   ${particleGuide}
-                   Forneça também a transliteração fonética adaptada para leitura fácil de um brasileiro (ex: "Sa-wat-di kha", "Khop-khun mak kha", usando sílabas separadas por hífen com sons do português).
-                   Se houver alguma dica cultural útil ou alerta (como comida apimentada), inclua brevemente.`
-                : `Você é um intérprete especialista em viagens Brasil-Tailândia. Traduza a frase do Tailandês para o Português do Brasil natural, claro e direto.
-                   Se a frase em tailandês mencionar pimenta, ingredientes picantes, preços ou algo importante para um turista brasileiro, destaque na dica.`;
+            let prompt = '';
+            if (direction === 'PT-TH') {
+                prompt = `Você é um intérprete especialista em viagens Brasil-Tailândia.
+Traduza a seguinte frase do Português para o Tailandês natural e educado:
+"${inputText}"
 
-            const payload = {
-                contents: [{ parts: [{ text: text }] }],
-                systemInstruction: { parts: [{ text: systemPrompt }] },
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "OBJECT",
-                        properties: {
-                            translatedText: {
-                                type: "STRING",
-                                description: isPtToTh ? "Tradução em alfabeto tailandês" : "Tradução em português do Brasil"
-                            },
-                            phoneticPtBr: {
-                                type: "STRING",
-                                description: isPtToTh ? "Pronúncia aproximada escrita para falantes de português lerem facilmente" : "Transliteração do que foi dito em tailandês"
-                            },
-                            culturalTip: {
-                                type: "STRING",
-                                description: "Dica breve opcional (vazia se não houver necessidade)"
-                            }
-                        },
-                        required: ["translatedText", "phoneticPtBr"]
-                    }
-                }
-            };
+Regras:
+1. ${genderInstruction}
+2. Crie uma transliteração fonética ("phonetic_pt") escrita de forma intuitiva para um brasileiro ler em voz alta e soar como tailandês natural (ex: "Sa-wat-di kha", "Mai sai phrik na kha", usando sílabas separadas por hífen).
+3. Se houver alguma dica cultural útil ou aviso importante (ex: sobre pimenta, gorjeta, transporte), coloque em "tip" (curto, máx 1 frase), senão deixe vazio "".
+
+Responda EXCLUSIVAMENTE em JSON válido neste formato:
+{
+  "thai_script": "texto em alfabeto tailandês",
+  "phonetic_pt": "pronúncia aportuguesada",
+  "tip": "dica opcional em português"
+}`;
+            } else {
+                prompt = `Você é um intérprete especialista em viagens Tailândia-Brasil.
+Um tailandês disse ou escreveu o seguinte em Tailandês:
+"${inputText}"
+
+Traduza para o Português Brasileiro natural, claro e direto para o turista brasileiro entender o que foi respondido.
+Se houver contexto útil (ex: valor em Baht, direção, ingrediente apimentado), inclua em "tip".
+
+Responda EXCLUSIVAMENTE em JSON válido neste formato:
+{
+  "portuguese_text": "tradução clara em português",
+  "tip": "contexto opcional curto"
+}`;
+            }
 
             try {
-                const data = await fetchGeminiWithRetry(payload);
-                const rawJson = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!rawJson) throw new Error('Resposta vazia do tradutor.');
-
-                const parsed = JSON.parse(rawJson);
-                const targetLangCode = isPtToTh ? 'th-TH' : 'pt-BR';
-
-                appState.currentTranslation = {
-                    direction,
-                    sourceText: text,
-                    targetText: parsed.translatedText,
-                    phonetic: parsed.phoneticPtBr,
-                    targetLangCode
-                };
-
-                renderTranslationResult({
-                    direction,
-                    sourceText: text,
-                    targetText: parsed.translatedText,
-                    phonetic: parsed.phoneticPtBr,
-                    tip: parsed.culturalTip
+                const data = await fetchGeminiWithRetry({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        temperature: 0.2
+                    }
                 });
 
-                saveToHistory(appState.currentTranslation);
+                const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!rawText) throw new Error('Resposta vazia da IA');
 
-                // Automatically speak the translation
-                speakText(parsed.translatedText, targetLangCode);
+                const parsed = JSON.parse(rawText);
 
+                if (direction === 'PT-TH') {
+                    updateResultCard({
+                        direction: 'PT-TH',
+                        sourceText: inputText,
+                        targetMain: parsed.thai_script,
+                        phonetic: parsed.phonetic_pt,
+                        tip: parsed.tip || ''
+                    });
+                    addToHistory(inputText, parsed.thai_script, parsed.phonetic_pt, 'PT-TH');
+                    speakText(parsed.thai_script, 'th-TH');
+                } else {
+                    updateResultCard({
+                        direction: 'TH-PT',
+                        sourceText: inputText,
+                        targetMain: parsed.portuguese_text,
+                        phonetic: '',
+                        tip: parsed.tip || ''
+                    });
+                    addToHistory(inputText, parsed.portuguese_text, '', 'TH-PT');
+                    speakText(parsed.portuguese_text, 'pt-BR');
+                }
             } catch (error) {
                 console.error('Translation error:', error);
-                showToast(error.message || 'Falha na tradução. Verifique sua conexão ou chave API.', 'error');
+                showToast(error.message || 'Falha ao traduzir. Verifique sua conexão ou chave API.', 'error');
             } finally {
                 loader.classList.add('hidden');
             }
         }
 
-        function renderTranslationResult({ direction, sourceText, targetText, phonetic, tip }) {
-            const isPtToTh = direction === 'PT-TH';
-
-            document.getElementById('directionBadge').innerHTML = isPtToTh
-                ? `<span class="text-brand-orange">PT-BR</span><i class="ph-bold ph-arrow-right text-[10px]"></i><span>ไทย (TH)</span>`
-                : `<span class="text-brand-orange">ไทย (TH)</span><i class="ph-bold ph-arrow-right text-[10px]"></i><span>PT-BR</span>`;
-
-            document.getElementById('sourceLabel').textContent = isPtToTh ? 'Você disse (Português)' : 'Ouvido em Tailandês';
-            document.getElementById('sourceTextDisplay').textContent = sourceText;
-
-            document.getElementById('targetLabel').textContent = isPtToTh ? 'Em Tailandês (Mostre ou ouça)' : 'Significado em Português';
-            
-            const targetEl = document.getElementById('targetMainText');
-            targetEl.textContent = targetText;
-            if (isPtToTh) {
-                targetEl.classList.add('thai-text');
-            } else {
-                targetEl.classList.remove('thai-text');
-            }
-
+        function updateResultCard({ direction, sourceText, targetMain, phonetic, tip }) {
+            const dirBadge = document.getElementById('directionBadge');
+            const sourceLabel = document.getElementById('sourceLabel');
+            const sourceDisplay = document.getElementById('sourceTextDisplay');
+            const targetLabel = document.getElementById('targetLabel');
+            const targetMainEl = document.getElementById('targetMainText');
             const phoneticBox = document.getElementById('phoneticBox');
-            if (isPtToTh && phonetic) {
+            const phoneticDisplay = document.getElementById('phoneticTextDisplay');
+            const tipBox = document.getElementById('tipBox');
+            const tipDisplay = document.getElementById('tipTextDisplay');
+
+            sourceDisplay.textContent = sourceText;
+            targetMainEl.textContent = targetMain;
+
+            if (direction === 'PT-TH') {
+                dirBadge.innerHTML = `<span class="text-brand-orange">PT-BR</span><i class="ph-bold ph-arrow-right text-[10px]"></i><span>ไทย (TH)</span>`;
+                sourceLabel.textContent = 'Você disse (Português)';
+                targetLabel.textContent = 'Em Tailandês';
+                targetMainEl.classList.add('thai-text', 'text-2xl', 'sm:text-3xl');
+                targetMainEl.classList.remove('text-xl', 'sm:text-2xl');
+
                 phoneticBox.classList.remove('hidden');
-                document.getElementById('phoneticTextDisplay').textContent = `"${phonetic}"`;
+                phoneticDisplay.textContent = `"${phonetic}"`;
+
+                appState.currentAudioText = targetMain;
+                appState.currentAudioLang = 'th-TH';
+                appState.currentCopyText = `${targetMain} (${phonetic})`;
             } else {
+                dirBadge.innerHTML = `<span class="text-brand-orange">ไทย (TH)</span><i class="ph-bold ph-arrow-right text-[10px]"></i><span>PT-BR</span>`;
+                sourceLabel.textContent = 'Tailandês ouvido / digitado';
+                targetLabel.textContent = 'Significado em Português';
+                targetMainEl.classList.remove('thai-text', 'text-2xl', 'sm:text-3xl');
+                targetMainEl.classList.add('text-xl', 'sm:text-2xl');
+
                 phoneticBox.classList.add('hidden');
+
+                appState.currentAudioText = targetMain;
+                appState.currentAudioLang = 'pt-BR';
+                appState.currentCopyText = targetMain;
             }
 
-            const tipBox = document.getElementById('tipBox');
-            if (tip && tip.trim().length > 0) {
+            if (tip && tip.trim()) {
                 tipBox.classList.remove('hidden');
-                document.getElementById('tipTextDisplay').textContent = tip;
+                tipDisplay.textContent = tip;
             } else {
                 tipBox.classList.add('hidden');
             }
         }
 
-        function copyCurrentTranslation() {
-            const { sourceText, targetText, phonetic } = appState.currentTranslation;
-            const formatted = `${sourceText}\n${targetText}${phonetic ? `\nPronúncia: ${phonetic}` : ''}`;
-            copyTextToClipboard(formatted);
-        }
-
         // =========================================================================
-        // 8. PHOTO TRANSLATION (OCR + SPICE/ALLERGY DETECTION)
+        // 8. PHOTO / VISUAL TRANSLATOR (NO AUDIO, PORTUGUESE ONLY + SPICE CHECK)
         // =========================================================================
         function handleImageSelected(event) {
             const file = event.target.files?.[0];
@@ -1176,16 +1353,17 @@
 
             const previewWrapper = document.getElementById('imagePreviewWrapper');
             const previewImg = document.getElementById('selectedImagePreview');
+            const loader = document.getElementById('imageLoader');
             const resultCard = document.getElementById('photoResultCard');
 
-            resultCard.classList.add('hidden');
             previewWrapper.classList.remove('hidden');
+            loader.classList.remove('hidden');
+            resultCard.classList.add('hidden');
 
-            // Resize/compress image on canvas before sending to Gemini for fast mobile upload
             const reader = new FileReader();
-            reader.onload = (e) => {
+            reader.onload = function(e) {
                 const img = new Image();
-                img.onload = () => {
+                img.onload = function() {
                     const canvas = document.createElement('canvas');
                     const MAX_DIM = 1280;
                     let width = img.width;
@@ -1206,112 +1384,105 @@
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
                     previewImg.src = compressedDataUrl;
 
                     const base64Data = compressedDataUrl.split(',')[1];
-                    analyzePhotoWithGemini(base64Data, 'image/jpeg');
+                    analyzeImageWithGemini(base64Data, 'image/jpeg');
                 };
                 img.src = e.target.result;
             };
             reader.readAsDataURL(file);
-
-            // Reset input so the same file can be re-selected if needed
-            event.target.value = '';
         }
 
-        function resetImageTranslator() {
-            document.getElementById('imagePreviewWrapper').classList.add('hidden');
-            document.getElementById('photoResultCard').classList.add('hidden');
-            document.getElementById('selectedImagePreview').src = '';
-        }
-
-        async function analyzePhotoWithGemini(base64Image, mimeType) {
+        async function analyzeImageWithGemini(base64Image, mimeType) {
             const loader = document.getElementById('imageLoader');
             const resultCard = document.getElementById('photoResultCard');
-            loader.classList.remove('hidden');
+            const spiceAlert = document.getElementById('photoSpiceAlert');
+            const spiceAlertText = document.getElementById('photoSpiceAlertText');
+            const safeAlert = document.getElementById('photoSafeAlert');
+            const safeAlertText = document.getElementById('photoSafeAlertText');
+            const contentEl = document.getElementById('photoTranslationContent');
 
-            const prompt = `Analise esta imagem tirada por uma turista brasileira na Tailândia (pode ser um cardápio, placa, embalagem de produto, aviso ou ingrediente).
-1. Identifique todos os textos relevantes (em tailandês, inglês ou outro idioma) e traduza tudo de forma clara e organizada para o Português do Brasil.
-2. IMPORTANTE: A viajante tem restrição/alergia severa a comida apimentada (pimenta, chili, piri-piri, curry picante, pimenta-do-reino em excesso, etc.). Avalie se a imagem menciona pratos apimentados ou ingredientes com pimenta.`;
+            const prompt = `Analise esta imagem tirada por um turista brasileiro na Tailândia (pode ser um cardápio, placa de rua, aviso, embalagem de produto ou rótulo).
 
-            const payload = {
-                contents: [{
-                    role: "user",
-                    parts: [
-                        { text: prompt },
-                        {
-                            inlineData: {
-                                mimeType: mimeType,
-                                data: base64Image
-                            }
-                        }
-                    ]
-                }],
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "OBJECT",
-                        properties: {
-                            translatedSummary: {
-                                type: "STRING",
-                                description: "Tradução completa, organizada em tópicos fáceis de ler em Português do Brasil."
-                            },
-                            hasSpiceRisk: {
-                                type: "BOOLEAN",
-                                description: "True se houver qualquer prato picante, menção a pimenta (พริก / chili / spicy / curry) ou dúvida sobre ser apimentado."
-                            },
-                            spiceNote: {
-                                type: "STRING",
-                                description: "Explicação curta sobre quais itens têm pimenta ou confirmação de que parece seguro/sem pimenta."
-                            }
-                        },
-                        required: ["translatedSummary", "hasSpiceRisk", "spiceNote"]
-                    }
-                }
-            };
+Tarefas:
+1. Traduza TODO o conteúdo relevante da imagem para o Português Brasileiro de forma clara, organizada e fácil de ler (se for cardápio, liste os itens, ingredientes principais e preços em Baht se visíveis).
+2. Como a usuária tem alergia/intolerância a pimenta, avalie se a imagem menciona alimentos ou pratos tipicamente apimentados (ex:พริก / phrik, เผ็ด / phet, Tom Yum, Som Tum, Curry/Kaeng, chili, spicy).
+
+Responda EXCLUSIVAMENTE em JSON válido neste formato:
+{
+  "translation_pt": "Tradução completa e bem formatada em português com quebras de linha",
+  "is_food_or_menu": true ou false,
+  "has_spice_risk": true ou false,
+  "spice_note": "Explicação curta sobre quais itens têm pimenta ou confirmação de que não parece apimentado"
+}`;
 
             try {
-                const data = await fetchGeminiWithRetry(payload);
-                const rawJson = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!rawJson) throw new Error('Não foi possível ler o texto da imagem.');
+                const data = await fetchGeminiWithRetry({
+                    contents: [{
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    mimeType: mimeType,
+                                    data: base64Image
+                                }
+                            }
+                        ]
+                    }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        temperature: 0.2
+                    }
+                });
 
-                const parsed = JSON.parse(rawJson);
+                const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!rawText) throw new Error('Não foi possível ler o texto da imagem.');
 
-                const spiceAlert = document.getElementById('photoSpiceAlert');
-                const safeAlert = document.getElementById('photoSafeAlert');
+                const parsed = JSON.parse(rawText);
 
-                if (parsed.hasSpiceRisk) {
-                    spiceAlert.classList.remove('hidden');
-                    safeAlert.classList.add('hidden');
-                    document.getElementById('photoSpiceAlertText').textContent = parsed.spiceNote;
-                } else {
-                    spiceAlert.classList.add('hidden');
-                    safeAlert.classList.remove('hidden');
-                    document.getElementById('photoSafeAlertText').textContent = parsed.spiceNote || 'Nenhum ingrediente apimentado identificado no texto.';
+                contentEl.textContent = parsed.translation_pt;
+                appState.currentPhotoResultText = parsed.translation_pt;
+
+                spiceAlert.classList.add('hidden');
+                safeAlert.classList.add('hidden');
+
+                if (parsed.is_food_or_menu) {
+                    if (parsed.has_spice_risk) {
+                        spiceAlert.classList.remove('hidden');
+                        spiceAlertText.textContent = parsed.spice_note || 'Este item ou cardápio contém opções apimentadas. Peça "Mai sai phrik" (sem pimenta).';
+                    } else {
+                        safeAlert.classList.remove('hidden');
+                        safeAlertText.textContent = parsed.spice_note || 'Nenhum ingrediente apimentado detectado neste item.';
+                    }
                 }
 
-                document.getElementById('photoTranslationContent').textContent = parsed.translatedSummary;
                 resultCard.classList.remove('hidden');
-                resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
+                showToast('Imagem traduzida para o Português!', 'success');
             } catch (error) {
-                console.error('Photo OCR error:', error);
-                showToast(error.message || 'Erro ao traduzir foto. Verifique a chave API.', 'error');
+                console.error('Image analysis error:', error);
+                showToast(error.message || 'Erro ao analisar a foto. Tente tirar outra foto mais nítida.', 'error');
             } finally {
                 loader.classList.add('hidden');
             }
         }
 
-        function copyPhotoTranslation() {
-            const text = document.getElementById('photoTranslationContent').textContent;
-            copyTextToClipboard(text);
+        function resetImageTranslator() {
+            document.getElementById('imagePreviewWrapper').classList.add('hidden');
+            document.getElementById('photoResultCard').classList.add('hidden');
+            document.getElementById('cameraCaptureInput').value = '';
+            document.getElementById('galleryUploadInput').value = '';
+            appState.currentPhotoResultText = '';
         }
 
         // =========================================================================
-        // 9. PHRASEBOOK & HISTORY RENDERING
+        // 9. OFFLINE PHRASES RENDERING & HISTORY
         // =========================================================================
+        let currentPhraseCategory = 'all';
+
         function filterPhrases(category) {
+            currentPhraseCategory = category;
             document.querySelectorAll('.phrase-cat-btn').forEach(btn => {
                 if (btn.dataset.cat === category) {
                     btn.className = 'phrase-cat-btn px-3.5 py-1.5 rounded-full text-xs font-bold bg-brand-orange text-white shrink-0 transition';
@@ -1324,51 +1495,85 @@
 
         function renderPhrases(category) {
             const container = document.getElementById('phrasesListContainer');
-            const isFemale = appState.speakerGender === 'female';
-
-            const filtered = category === 'all' 
-                ? ESSENTIAL_PHRASES 
+            const filtered = category === 'all'
+                ? ESSENTIAL_PHRASES
                 : ESSENTIAL_PHRASES.filter(p => p.category === category);
 
-            container.innerHTML = filtered.map(item => {
-                const thText = isFemale ? item.th_f : item.th_m;
-                const phonetic = isFemale ? item.phonetic_f : item.phonetic_m;
-                const borderStyle = item.highlight 
-                    ? 'border-brand-orange/60 bg-gradient-to-br from-brand-orange/10 to-brand-card' 
-                    : 'border-brand-border bg-brand-card';
-                const ptSafe = escapeHtml(item.pt);
-                const thSafe = escapeHtml(thText);
-                const phoneticSafe = escapeHtml(phonetic);
+            const isFem = appState.politeGender === 'female';
+
+            container.innerHTML = filtered.map((item) => {
+                const thText = isFem ? item.th_fem : item.th_male;
+                const phonetic = isFem ? item.phonetic_fem : item.phonetic_male;
+                const borderStyle = item.highlight ? 'border-brand-orange/50 bg-brand-orange/5' : 'border-brand-border bg-brand-card';
 
                 return `
-                    <div class="rounded-2xl border ${borderStyle} p-4 flex items-center justify-between gap-3 transition hover:border-brand-orange/80">
-                        <div class="space-y-1 flex-1 min-w-0">
-                            ${item.highlight ? `<span class="inline-block text-[10px] font-bold uppercase tracking-wider text-brand-orange mb-0.5">Essencial / Alergia</span>` : ''}
-                            <p class="text-sm font-bold text-white leading-snug">${ptSafe}</p>
-                            <p class="thai-text text-lg font-semibold text-zinc-200 pt-0.5">${thSafe}</p>
-                            <p class="text-xs font-medium text-brand-orange">"${phoneticSafe}"</p>
+                    <div onclick="playOfflinePhrase('${thText.replace(/'/g, "\\'")}', '${item.pt.replace(/'/g, "\\'")}', '${phonetic.replace(/'/g, "\\'")}')" 
+                         class="cursor-pointer rounded-2xl border ${borderStyle} hover:border-brand-orange p-4 transition active:scale-[0.99] flex items-center justify-between gap-3">
+                        <div class="space-y-1 flex-1">
+                            <p class="text-sm font-bold text-white">${item.pt}</p>
+                            <p class="thai-text text-lg font-semibold text-zinc-200">${thText}</p>
+                            <p class="text-xs font-semibold text-brand-orange">"${phonetic}"</p>
                         </div>
-                        <button onclick="playPhraseCard(${JSON.stringify(item.pt)}, ${JSON.stringify(thText)}, ${JSON.stringify(phonetic)})" class="w-11 h-11 rounded-2xl bg-zinc-900 hover:bg-brand-orange border border-brand-border hover:border-brand-orange text-white flex items-center justify-center shrink-0 transition active:scale-95" aria-label="Ouvir frase">
-                            <i class="ph-fill ph-speaker-high text-xl"></i>
+                        <button class="w-10 h-10 rounded-xl bg-zinc-900 border border-brand-border text-brand-orange flex items-center justify-center shrink-0">
+                            <i class="ph-fill ph-speaker-high text-lg"></i>
                         </button>
                     </div>
                 `;
             }).join('');
         }
 
-        function playPhraseCard(ptText, thText, phonetic) {
+        function playOfflinePhrase(thText, ptText, phonetic) {
+            unlockAudioContext();
             speakText(thText, 'th-TH');
-            showToast(`Reproduzindo: "${phonetic}"`, 'warning');
+            showToast(`Falando: "${phonetic}"`, 'info');
         }
 
-        function saveToHistory(item) {
+        function addToHistory(source, target, phonetic, direction) {
             appState.history.unshift({
-                ...item,
-                timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                source,
+                target,
+                phonetic,
+                direction,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             });
-            if (appState.history.length > 8) appState.history.pop();
+            if (appState.history.length > 6) appState.history.pop();
             localStorage.setItem('thaitrip_history', JSON.stringify(appState.history));
             renderHistory();
+        }
+
+        function renderHistory() {
+            const section = document.getElementById('historySection');
+            const list = document.getElementById('historyList');
+
+            if (!appState.history.length) {
+                section.classList.add('hidden');
+                return;
+            }
+
+            section.classList.remove('hidden');
+            list.innerHTML = appState.history.map((item, idx) => `
+                <div onclick="restoreHistoryItem(${idx})" class="cursor-pointer rounded-xl bg-brand-card/70 hover:bg-brand-card border border-brand-border/80 px-3.5 py-2.5 flex items-center justify-between gap-3 transition">
+                    <div class="min-w-0 flex-1">
+                        <p class="text-xs text-zinc-400 truncate">${item.source}</p>
+                        <p class="text-sm font-semibold text-white truncate ${item.direction === 'PT-TH' ? 'thai-text' : ''}">${item.target}</p>
+                    </div>
+                    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 shrink-0">${item.direction}</span>
+                </div>
+            `).join('');
+        }
+
+        function restoreHistoryItem(index) {
+            unlockAudioContext();
+            const item = appState.history[index];
+            if (!item) return;
+            updateResultCard({
+                direction: item.direction,
+                sourceText: item.source,
+                targetMain: item.target,
+                phonetic: item.phonetic,
+                tip: ''
+            });
+            speakText(item.target, item.direction === 'PT-TH' ? 'th-TH' : 'pt-BR');
         }
 
         function clearHistory() {
@@ -1377,67 +1582,32 @@
             renderHistory();
         }
 
-        function renderHistory() {
-            const section = document.getElementById('historySection');
-            const list = document.getElementById('historyList');
-
-            if (appState.history.length === 0) {
-                section.classList.add('hidden');
-                return;
-            }
-
-            section.classList.remove('hidden');
-            list.innerHTML = appState.history.map((h, idx) => `
-                <div onclick="restoreHistoryItem(${idx})" class="cursor-pointer rounded-2xl bg-brand-card/70 hover:bg-brand-card border border-brand-border/80 p-3 flex items-center justify-between gap-3 transition">
-                    <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-2 text-[10px] text-zinc-500 font-semibold">
-                            <span class="text-brand-orange">${h.direction}</span>
-                            <span>•</span>
-                            <span>${h.timestamp}</span>
-                        </div>
-                        <p class="text-xs text-zinc-300 truncate mt-0.5">${h.sourceText}</p>
-                        <p class="text-sm font-semibold text-white truncate">${h.targetText}</p>
-                    </div>
-                    <i class="ph-bold ph-speaker-high text-zinc-400 hover:text-brand-orange text-lg shrink-0"></i>
-                </div>
-            `).join('');
-        }
-
-        function restoreHistoryItem(idx) {
-            const item = appState.history[idx];
-            if (!item) return;
-            appState.currentTranslation = item;
-            renderTranslationResult({
-                direction: item.direction,
-                sourceText: item.sourceText,
-                targetText: item.targetText,
-                phonetic: item.phonetic,
-                tip: ''
-            });
-            speakText(item.targetText, item.targetLangCode);
-        }
-
-        function copyTextToClipboard(text) {
-            const safeText = String(text ?? '');
-            const tempInput = document.createElement('textarea');
-            tempInput.value = safeText;
-            tempInput.setAttribute('readonly', '');
-            tempInput.style.position = 'fixed';
-            tempInput.style.opacity = '0';
-            document.body.appendChild(tempInput);
-            tempInput.select();
+        // =========================================================================
+        // 10. CLIPBOARD HELPER (IFRAME SAFE)
+        // =========================================================================
+        function copyToClipboardFallback(text, successMsg) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
             try {
-                const copied = navigator.clipboard && navigator.clipboard.writeText
-                    ? navigator.clipboard.writeText(safeText)
-                    : Promise.resolve(document.execCommand('copy'));
-                copied.then(() => {
-                    showToast('Copiado para a área de transferência!', 'success');
-                }).catch(() => {
-                    showToast('Não foi possível copiar.', 'error');
-                });
-            } finally {
-                document.body.removeChild(tempInput);
+                document.execCommand('copy');
+                showToast(successMsg, 'success');
+            } catch (err) {
+                showToast('Não foi possível copiar o texto.', 'error');
             }
+            document.body.removeChild(textarea);
+        }
+
+        function copyCurrentTranslation() {
+            copyToClipboardFallback(appState.currentCopyText, 'Tradução copiada para a área de transferência!');
+        }
+
+        function copyPhotoTranslation() {
+            if (!appState.currentPhotoResultText) return;
+            copyToClipboardFallback(appState.currentPhotoResultText, 'Tradução da foto copiada!');
         }
     </script>
 </body>
