@@ -486,7 +486,30 @@
         // 1. STATE & CONFIGURATION
         // =========================================================================
         const DEFAULT_ENV_KEY = ""; // Runtime key provided automatically in preview environment
-        const GEMINI_MODEL = "gemini-3-flash-preview";
+        const GEMINI_MODEL = "gemini-2.5-flash";
+
+        function escapeHtml(value = '') {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function unlockAudioContext() {
+            try {
+                if (!window.AudioContext && !window.webkitAudioContext) return;
+                if (!window.__thaiTripAudioCtx) {
+                    window.__thaiTripAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (window.__thaiTripAudioCtx.state === 'suspended') {
+                    window.__thaiTripAudioCtx.resume();
+                }
+            } catch (err) {
+                console.warn('Audio unlock failed:', err);
+            }
+        }
 
         let appState = {
             apiKey: localStorage.getItem('thaitrip_gemini_key') || DEFAULT_ENV_KEY,
@@ -740,6 +763,10 @@
         function openSettingsModal() {
             document.getElementById('geminiApiKeyInput').value = localStorage.getItem('thaitrip_gemini_key') || '';
             document.getElementById('settingsModal').classList.remove('hidden');
+            setTimeout(() => {
+                const input = document.getElementById('geminiApiKeyInput');
+                if (input) input.focus();
+            }, 50);
         }
 
         function closeSettingsModal() {
@@ -771,8 +798,9 @@
 
         function updateApiStatusIndicator() {
             const dot = document.getElementById('apiStatusDot');
-            // Always green if key exists or in preview environment
-            dot.className = 'absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500';
+            const hasStoredKey = Boolean(localStorage.getItem('thaitrip_gemini_key'));
+            const isPreviewKey = Boolean(DEFAULT_ENV_KEY);
+            dot.className = `absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${hasStoredKey || isPreviewKey ? 'bg-emerald-500' : 'bg-amber-500'}`;
         }
 
         function getActiveApiKey() {
@@ -792,6 +820,7 @@
         }
 
         function speakText(text, langCode) {
+            unlockAudioContext();
             if (!('speechSynthesis' in window)) {
                 showToast('Seu navegador não suporta reprodução de áudio.', 'error');
                 return;
@@ -836,6 +865,7 @@
         }
 
         function replayCurrentAudio() {
+            unlockAudioContext();
             const { targetText, targetLangCode } = appState.currentTranslation;
             if (targetText) {
                 speakText(targetText, targetLangCode);
@@ -843,6 +873,7 @@
         }
 
         function triggerQuickPhrase(ptText, thText, phoneticText) {
+            unlockAudioContext();
             appState.currentTranslation = {
                 direction: 'PT-TH',
                 sourceText: ptText,
@@ -875,6 +906,7 @@
         }
 
         function startVoiceTranslation(langCode) {
+            unlockAudioContext();
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
                 showToast('Reconhecimento de voz não suportado neste navegador. Use o campo de digitação.', 'warning');
@@ -959,6 +991,7 @@
         }
 
         function handleManualTranslate() {
+            unlockAudioContext();
             const input = document.getElementById('manualTextInput');
             const text = input.value.trim();
             if (!text) {
@@ -974,6 +1007,10 @@
         // =========================================================================
         async function fetchGeminiWithRetry(payload, maxRetries = 3) {
             const apiKey = getActiveApiKey();
+            if (!apiKey) {
+                throw new Error('Configure sua chave API do Gemini nas configurações para usar a tradução inteligente.');
+            }
+
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
             let delay = 1000;
@@ -1299,16 +1336,19 @@
                 const borderStyle = item.highlight 
                     ? 'border-brand-orange/60 bg-gradient-to-br from-brand-orange/10 to-brand-card' 
                     : 'border-brand-border bg-brand-card';
+                const ptSafe = escapeHtml(item.pt);
+                const thSafe = escapeHtml(thText);
+                const phoneticSafe = escapeHtml(phonetic);
 
                 return `
                     <div class="rounded-2xl border ${borderStyle} p-4 flex items-center justify-between gap-3 transition hover:border-brand-orange/80">
                         <div class="space-y-1 flex-1 min-w-0">
                             ${item.highlight ? `<span class="inline-block text-[10px] font-bold uppercase tracking-wider text-brand-orange mb-0.5">Essencial / Alergia</span>` : ''}
-                            <p class="text-sm font-bold text-white leading-snug">${item.pt}</p>
-                            <p class="thai-text text-lg font-semibold text-zinc-200 pt-0.5">${thText}</p>
-                            <p class="text-xs font-medium text-brand-orange">"${phonetic}"</p>
+                            <p class="text-sm font-bold text-white leading-snug">${ptSafe}</p>
+                            <p class="thai-text text-lg font-semibold text-zinc-200 pt-0.5">${thSafe}</p>
+                            <p class="text-xs font-medium text-brand-orange">"${phoneticSafe}"</p>
                         </div>
-                        <button onclick="playPhraseCard('${item.pt.replace(/'/g, "\\'")}', '${thText}', '${phonetic}')" class="w-11 h-11 rounded-2xl bg-zinc-900 hover:bg-brand-orange border border-brand-border hover:border-brand-orange text-white flex items-center justify-center shrink-0 transition active:scale-95" aria-label="Ouvir frase">
+                        <button onclick="playPhraseCard(${JSON.stringify(item.pt)}, ${JSON.stringify(thText)}, ${JSON.stringify(phonetic)})" class="w-11 h-11 rounded-2xl bg-zinc-900 hover:bg-brand-orange border border-brand-border hover:border-brand-orange text-white flex items-center justify-center shrink-0 transition active:scale-95" aria-label="Ouvir frase">
                             <i class="ph-fill ph-speaker-high text-xl"></i>
                         </button>
                     </div>
@@ -1378,17 +1418,26 @@
         }
 
         function copyTextToClipboard(text) {
+            const safeText = String(text ?? '');
             const tempInput = document.createElement('textarea');
-            tempInput.value = text;
+            tempInput.value = safeText;
+            tempInput.setAttribute('readonly', '');
+            tempInput.style.position = 'fixed';
+            tempInput.style.opacity = '0';
             document.body.appendChild(tempInput);
             tempInput.select();
             try {
-                document.execCommand('copy');
-                showToast('Copiado para a área de transferência!', 'success');
-            } catch (err) {
-                showToast('Não foi possível copiar.', 'error');
+                const copied = navigator.clipboard && navigator.clipboard.writeText
+                    ? navigator.clipboard.writeText(safeText)
+                    : Promise.resolve(document.execCommand('copy'));
+                copied.then(() => {
+                    showToast('Copiado para a área de transferência!', 'success');
+                }).catch(() => {
+                    showToast('Não foi possível copiar.', 'error');
+                });
+            } finally {
+                document.body.removeChild(tempInput);
             }
-            document.body.removeChild(tempInput);
         }
     </script>
 </body>
