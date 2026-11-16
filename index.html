@@ -519,320 +519,11 @@
     <!-- JavaScript Application Logic -->
     <script>
         // =========================================================================
-        // 1. STATE & CONFIGURATION
-        // =========================================================================
-        const DEFAULT_ENV_KEY = "";
-        const GEMINI_MODEL = "gemini-2.5-flash";
-
-        let appState = {
-            apiKey: localStorage.getItem('thaitrip_gemini_key') || DEFAULT_ENV_KEY,
-            politeGender: localStorage.getItem('thaitrip_gender') || 'female',
-            speechRate: 1.0,
-            manualDirection: 'PT-TH',
-            currentAudioText: 'สวัสดีค่ะ อันนี้ราคาเท่าไหร่คะ',
-            currentAudioLang: 'th-TH',
-            currentCopyText: 'สวัสดีค่ะ อันนี้ราคาเท่าไหร่คะ (Sa-wat-di kha. An-ni ra-kha thao-rai kha?)',
-            currentPhotoResultText: '',
-            history: JSON.parse(localStorage.getItem('thaitrip_history') || '[]'),
-            isListening: false
-        };
-
-        // =========================================================================
-        // 2. OFFLINE ESSENTIAL PHRASES DATABASE
-        // =========================================================================
-        const ESSENTIAL_PHRASES = [
-            {
-                category: 'food',
-                pt: 'Sem pimenta, por favor! Sou alérgica a pimenta.',
-                th_fem: 'ไม่ใส่พริกนะคะ แพ้พริกค่ะ',
-                phonetic_fem: 'Mai sai phrik na kha. Phae phrik kha.',
-                th_male: 'ไม่ใส่พริกนะครับ แพ้พริกครับ',
-                phonetic_male: 'Mai sai phrik na khrap. Phae phrik khrap.',
-                highlight: true
-            },
-            {
-                category: 'food',
-                pt: 'Não apimentado (nada picante).',
-                th_fem: 'ไม่เผ็ดเลยค่ะ',
-                phonetic_fem: 'Mai phet loei kha.',
-                th_male: 'ไม่เผ็ดเลยครับ',
-                phonetic_male: 'Mai phet loei khrap.',
-                highlight: true
-            },
-            {
-                category: 'food',
-                pt: 'A conta, por favor.',
-                th_fem: 'เก็บเงินด้วยค่ะ',
-                phonetic_fem: 'Kep ngoen duai kha.',
-                th_male: 'เก็บเงินด้วยครับ',
-                phonetic_male: 'Kep ngoen duai khrap.',
-                highlight: false
-            },
-            {
-                category: 'food',
-                pt: 'Uma garrafa de água, por favor.',
-                th_fem: 'ขอน้ำเปล่าหนึ่งขวดค่ะ',
-                phonetic_fem: 'Kho nam plao nueng khuat kha.',
-                th_male: 'ขอน้ำเปล่าหนึ่งขวดครับ',
-                phonetic_male: 'Kho nam plao nueng khuat khrap.',
-                highlight: false
-            },
-            {
-                category: 'food',
-                pt: 'Estava delicioso! Obrigada.',
-                th_fem: 'อร่อยมากค่ะ ขอบคุณค่ะ',
-                phonetic_fem: 'A-roi mak kha. Khop-khun kha.',
-                th_male: 'อร่อยมากครับ ขอบคุณครับ',
-                phonetic_male: 'A-roi mak khrap. Khop-khun khrap.',
-                highlight: false
-            },
-            {
-                category: 'shopping',
-                pt: 'Olá! Quanto custa isso?',
-                th_fem: 'สวัสดีค่ะ อันนี้ราคาเท่าไหร่คะ',
-                phonetic_fem: 'Sa-wat-di kha. An-ni ra-kha thao-rai kha?',
-                th_male: 'สวัสดีครับ อันนี้ราคาเท่าไหร่ครับ',
-                phonetic_male: 'Sa-wat-di khrap. An-ni ra-kha thao-rai khrap?',
-                highlight: false
-            },
-            {
-                category: 'shopping',
-                pt: 'Pode fazer um desconto?',
-                th_fem: 'ลดราคาได้ไหมคะ',
-                phonetic_fem: 'Lot ra-kha dai mai kha?',
-                th_male: 'ลดราคาได้ไหมครับ',
-                phonetic_male: 'Lot ra-kha dai mai khrap?',
-                highlight: false
-            },
-            {
-                category: 'shopping',
-                pt: 'Aceita cartão de crédito?',
-                th_fem: 'รับบัตรเครดิตไหมคะ',
-                phonetic_fem: 'Rap bat khre-dit mai kha?',
-                th_male: 'รับบัตรเครดิตไหมครับ',
-                phonetic_male: 'Rap bat khre-dit mai khrap?',
-                highlight: false
-            },
-            {
-                category: 'transport',
-                pt: 'Por favor, ligue o taxímetro.',
-                th_fem: 'กรุณาเปิดมิเตอร์ด้วยค่ะ',
-                phonetic_fem: 'Ka-ru-na poet mi-toe duai kha.',
-                th_male: 'กรุณาเปิดมิเตอร์ด้วยครับ',
-                phonetic_male: 'Ka-ru-na poet mi-toe duai khrap.',
-                highlight: false
-            },
-            {
-                category: 'transport',
-                pt: 'Por favor, me leve para este endereço.',
-                th_fem: 'กรุณาไปส่งที่อยู่นี้ค่ะ',
-                phonetic_fem: 'Ka-ru-na pai song thi-yu ni kha.',
-                th_male: 'กรุณาไปส่งที่อยู่นี้ครับ',
-                phonetic_male: 'Ka-ru-na pai song thi-yu ni khrap.',
-                highlight: false
-            },
-            {
-                category: 'transport',
-                pt: 'Onde fica o banheiro?',
-                th_fem: 'ห้องน้ำอยู่ที่ไหนคะ',
-                phonetic_fem: 'Hong-nam yu thi-nai kha?',
-                th_male: 'ห้องน้ำอยู่ที่ไหนครับ',
-                phonetic_male: 'Hong-nam yu thi-nai khrap?',
-                highlight: false
-            },
-            {
-                category: 'emergency',
-                pt: 'Preciso ir ao hospital / farmácia.',
-                th_fem: 'ฉันต้องไปโรงพยาบาล / ร้านขายยาค่ะ',
-                phonetic_fem: 'Chan tong pai rong-pha-ya-ban / ran-khai-ya kha.',
-                th_male: 'ผมต้องไปโรงพยาบาล / ร้านขายยาครับ',
-                phonetic_male: 'Phom tong pai rong-pha-ya-ban / ran-khai-ya khrap.',
-                highlight: false
-            },
-            {
-                category: 'emergency',
-                pt: 'Estou tendo uma reação alérgica.',
-                th_fem: 'ฉันมีอาการแพ้อาหารค่ะ',
-                phonetic_fem: 'Chan mi a-kan phae a-han kha.',
-                th_male: 'ผมมีอาการแพ้อาหารครับ',
-                phonetic_male: 'Phom mi a-kan phae a-han khrap.',
-                highlight: false
-            }
-        ];
-
-        // =========================================================================
-        // 3. INITIALIZATION & UI HELPERS
-        // =========================================================================
-        window.addEventListener('DOMContentLoaded', () => {
-            updateGenderUI();
-            updateApiStatusIndicator();
-            initSpeechSynthesis();
-            initSpeechRecognition();
-            renderPhrases('all');
-            renderHistory();
-
-            if (!getActiveApiKey()) {
-                showToast('Toque na engrenagem (⚙️) no topo direito para colar sua chave gratuita da API Gemini.', 'warning');
-            }
-        });
-
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            
-            const colors = {
-                info: 'bg-zinc-900 border-brand-border text-white',
-                success: 'bg-emerald-950/95 border-emerald-500/50 text-emerald-100',
-                error: 'bg-red-950/95 border-red-500/50 text-red-100',
-                warning: 'bg-amber-950/95 border-amber-500/50 text-amber-100'
-            };
-
-            const icons = {
-                info: 'ph-info text-brand-orange',
-                success: 'ph-check-circle text-emerald-400',
-                error: 'ph-warning-circle text-red-400',
-                warning: 'ph-warning text-amber-400'
-            };
-
-            toast.className = `pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl flex items-center gap-3 text-xs font-medium transition-all duration-300 transform translate-y-0 ${colors[type] || colors.info}`;
-            toast.innerHTML = `
-                <i class="ph-fill ${icons[type] || icons.info} text-lg shrink-0"></i>
-                <span class="flex-1 leading-snug">${message}</span>
-            `;
-
-            container.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateY(-8px)';
-                setTimeout(() => toast.remove(), 300);
-            }, 4200);
-        }
-
-        function switchTab(tabName) {
-            ['voice', 'camera', 'phrases'].forEach(t => {
-                const section = document.getElementById(`tab-${t}`);
-                const btn = document.getElementById(`nav-${t}`);
-                if (t === tabName) {
-                    section.classList.remove('hidden');
-                    btn.classList.add('bg-brand-orange/15', 'text-brand-orange', 'font-bold');
-                    btn.classList.remove('text-zinc-400', 'font-medium');
-                } else {
-                    section.classList.add('hidden');
-                    btn.classList.remove('bg-brand-orange/15', 'text-brand-orange', 'font-bold');
-                    btn.classList.add('text-zinc-400', 'font-medium');
-                }
-            });
-        }
-
-        function togglePoliteParticle() {
-            appState.politeGender = appState.politeGender === 'female' ? 'male' : 'female';
-            localStorage.setItem('thaitrip_gender', appState.politeGender);
-            updateGenderUI();
-            renderPhrases(currentPhraseCategory);
-            showToast(
-                appState.politeGender === 'female' 
-                    ? 'Modo Feminino ativado: frases terminam com "Kha" (ค่ะ/คะ)' 
-                    : 'Modo Masculino ativado: frases terminam com "Khrap" (ครับ)',
-                'info'
-            );
-        }
-
-        function updateGenderUI() {
-            const label = document.getElementById('genderLabel');
-            label.textContent = appState.politeGender === 'female' ? 'Kha (Fem)' : 'Khrap (Masc)';
-        }
-
-        function toggleSpeechSpeed() {
-            appState.speechRate = appState.speechRate === 1.0 ? 0.65 : 1.0;
-            const speedLabel = document.getElementById('speedLabel');
-            speedLabel.textContent = appState.speechRate === 1.0 ? '1.0x Normal' : '0.65x Devagar';
-            showToast(`Velocidade da voz: ${speedLabel.textContent}`, 'info');
-        }
-
-        function setManualDirection(dir) {
-            appState.manualDirection = dir;
-            const ptBtn = document.getElementById('manualDirPtTh');
-            const thBtn = document.getElementById('manualDirThPt');
-            const input = document.getElementById('manualTextInput');
-
-            if (dir === 'PT-TH') {
-                ptBtn.className = 'px-2 py-1 rounded-md bg-brand-orange text-white transition';
-                thBtn.className = 'px-2 py-1 rounded-md text-zinc-400 hover:text-white transition';
-                input.placeholder = 'Digite em português para traduzir...';
-            } else {
-                thBtn.className = 'px-2 py-1 rounded-md bg-brand-orange text-white transition';
-                ptBtn.className = 'px-2 py-1 rounded-md text-zinc-400 hover:text-white transition';
-                input.placeholder = 'Cole ou digite texto em tailandês (ไทย)...';
-            }
-        }
-
-        // =========================================================================
-        // 4. SETTINGS & API KEY MANAGEMENT
-        // =========================================================================
-        function getActiveApiKey() {
-            return (appState.apiKey || '').trim();
-        }
-
-        function updateApiStatusIndicator() {
-            const dot = document.getElementById('apiStatusDot');
-            if (getActiveApiKey()) {
-                dot.className = 'absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500';
-            } else {
-                dot.className = 'absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500 animate-ping';
-            }
-        }
-
-        function openSettingsModal() {
-            document.getElementById('geminiApiKeyInput').value = localStorage.getItem('thaitrip_gemini_key') || '';
-            const statusText = document.getElementById('voiceEngineStatusText');
-            if (statusText) {
-                const hasThaiLocal = availableVoices.some(v => v.lang && v.lang.toLowerCase().includes('th'));
-                statusText.textContent = hasThaiLocal
-                    ? 'Voz tailandesa nativa detectada + backup online ativo'
-                    : 'Modo híbrido ativo (áudio online para tailandês)';
-            }
-            document.getElementById('settingsModal').classList.remove('hidden');
-        }
-
-        function closeSettingsModal() {
-            document.getElementById('settingsModal').classList.add('hidden');
-        }
-
-        function saveApiKey() {
-            const val = document.getElementById('geminiApiKeyInput').value.trim();
-            if (val) {
-                localStorage.setItem('thaitrip_gemini_key', val);
-                appState.apiKey = val;
-                showToast('Chave API salva com sucesso no seu dispositivo!', 'success');
-            } else {
-                localStorage.removeItem('thaitrip_gemini_key');
-                appState.apiKey = DEFAULT_ENV_KEY;
-                showToast('Chave personalizada removida.', 'info');
-            }
-            updateApiStatusIndicator();
-            closeSettingsModal();
-        }
-
-        function clearApiKey() {
-            localStorage.removeItem('thaitrip_gemini_key');
-            document.getElementById('geminiApiKeyInput').value = '';
-            appState.apiKey = DEFAULT_ENV_KEY;
-            updateApiStatusIndicator();
-            showToast('Chave API removida do navegador.', 'info');
-        }
-
-        function testThaiAudioInSettings() {
-            unlockAudioContext();
-            speakText('สวัสดีค่ะ ยินดีต้อนรับสู่ประเทศไทย', 'th-TH', 1.0);
-            showToast('Reproduzindo saudação em tailandês ("Sa-wat-di kha...")...', 'info');
-        }
-
-        // =========================================================================
-        // 5. HYBRID TEXT-TO-SPEECH ENGINE (NATIVE + ONLINE FALLBACK FOR GITHUB PAGES)
+        // 5. GEMINI NATIVE AUDIO + HYBRID TTS ENGINE (100% GITHUB PAGES SAFE)
         // =========================================================================
         let availableVoices = [];
         let unlockedAudioCtx = null;
-        let activeFallbackAudio = null;
+        let activeAudioSource = null;
         let activeFallbackAbort = false;
 
         function initSpeechSynthesis() {
@@ -854,19 +545,16 @@
                     if (unlockedAudioCtx.state === 'suspended') {
                         unlockedAudioCtx.resume();
                     }
+                    // Toca 1 frame silencioso dentro do clique do usuário para destravar permanentemente o AudioContext no iOS/Android/Chrome
+                    const buffer = unlockedAudioCtx.createBuffer(1, 1, 22050);
+                    const source = unlockedAudioCtx.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(unlockedAudioCtx.destination);
+                    source.start(0);
                 }
                 if ('speechSynthesis' in window) {
                     window.speechSynthesis.resume();
                 }
-                if (!activeFallbackAudio) {
-                    activeFallbackAudio = new Audio();
-                    activeFallbackAudio.setAttribute('playsinline', '');
-                    activeFallbackAudio.setAttribute('referrerpolicy', 'no-referrer');
-                }
-                activeFallbackAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-                activeFallbackAudio.play().then(() => {
-                    activeFallbackAudio.pause();
-                }).catch(() => {});
             } catch (e) {
                 console.warn('Audio unlock warning:', e);
             }
@@ -895,146 +583,202 @@
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
             }
-            if (activeFallbackAudio) {
+            if (activeAudioSource) {
                 try {
-                    activeFallbackAudio.pause();
-                    activeFallbackAudio.currentTime = 0;
+                    activeAudioSource.stop();
+                    activeAudioSource.disconnect();
                 } catch (e) {}
+                activeAudioSource = null;
             }
             setSpeakingVisualState(false);
         }
 
-        function splitTextIntoTtsChunks(text, maxLen = 160) {
-            const clean = (text || '').replace(/\s+/g, ' ').trim();
-            if (!clean) return [];
-            if (clean.length <= maxLen) return [clean];
-
-            const parts = clean.split(/(?<=[.!?।ฯ\n])\s+/);
-            const chunks = [];
-            let current = '';
-
-            for (const part of parts) {
-                if ((current + ' ' + part).trim().length <= maxLen) {
-                    current = (current + ' ' + part).trim();
-                } else {
-                    if (current) chunks.push(current);
-                    if (part.length > maxLen) {
-                        for (let i = 0; i < part.length; i += maxLen) {
-                            chunks.push(part.slice(i, i + maxLen));
-                        }
-                        current = '';
-                    } else {
-                        current = part;
-                    }
-                }
+        // Converte base64 PCM (24kHz, 16-bit, mono) retornado pelo Gemini em AudioBuffer tocável via Web Audio API (imune a bloqueio de autoplay!)
+        function decodePcmBase64ToAudioBuffer(base64Data, audioCtx, sampleRate = 24000) {
+            const binaryString = atob(base64Data);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
             }
-            if (current) chunks.push(current);
-            return chunks;
+            const int16Data = new Int16Array(bytes.buffer);
+            const audioBuffer = audioCtx.createBuffer(1, int16Data.length, sampleRate);
+            const channelData = audioBuffer.getChannelData(0);
+            for (let i = 0; i < int16Data.length; i++) {
+                channelData[i] = int16Data[i] / 32768.0;
+            }
+            return audioBuffer;
         }
 
-        async function playOnlineTtsFallback(text, langCode, customRate = null) {
+        async function playGeminiNativeTts(text, langCode, customRate = null) {
+            const apiKey = getActiveApiKey();
+            if (!apiKey) {
+                throw new Error('NO_API_KEY');
+            }
+
             activeFallbackAbort = false;
             const rate = customRate !== null ? customRate : appState.speechRate;
-            const tl = langCode.toLowerCase().startsWith('th') ? 'th' : 'pt';
-            const chunks = splitTextIntoTtsChunks(text, 160);
+            const isThai = langCode.toLowerCase().startsWith('th');
+            const voiceName = appState.politeGender === 'female' ? 'Aoede' : 'Charon';
 
             setSpeakingVisualState(true, langCode);
 
-            try {
-                for (const chunk of chunks) {
-                    if (activeFallbackAbort) break;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+            const promptInstruction = isThai
+                ? `Pronuncie em voz alta de forma clara, natural e educada em Tailandês exatamente o seguinte texto (não adicione comentários): ${text}`
+                : `Leia em voz alta de forma clara e natural em Português do Brasil exatamente o seguinte texto (não adicione comentários): ${text}`;
 
-                    await new Promise((resolve, reject) => {
-                        const encoded = encodeURIComponent(chunk);
-                        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&client=gtx&tl=${tl}&q=${encoded}`;
-
-                        const audioEl = new Audio();
-                        audioEl.setAttribute('playsinline', '');
-                        audioEl.setAttribute('referrerpolicy', 'no-referrer');
-                        activeFallbackAudio = audioEl;
-
-                        audioEl.src = ttsUrl;
-                        audioEl.playbackRate = rate;
-
-                        audioEl.onended = () => resolve();
-                        audioEl.onerror = (err) => reject(err);
-
-                        const playPromise = audioEl.play();
-                        if (playPromise !== undefined) {
-                            playPromise.catch(err => reject(err));
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: promptInstruction }] }],
+                    generationConfig: {
+                        responseModalities: ["AUDIO"],
+                        speechConfig: {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: {
+                                    voiceName: voiceName
+                                }
+                            }
                         }
-                    });
-                }
-            } catch (err) {
-                console.warn('Online TTS fallback failed:', err);
-                showToast('Seu navegador bloqueou o som automático. Toque no botão laranja "Ouvir Tradução".', 'warning');
-            } finally {
-                setSpeakingVisualState(false);
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`GEMINI_TTS_HTTP_${response.status}`);
             }
+
+            const data = await response.json();
+            if (activeFallbackAbort) return;
+
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            const audioPart = parts.find(p => p.inlineData && p.inlineData.data);
+            if (!audioPart) {
+                throw new Error('NO_AUDIO_DATA_RETURNED');
+            }
+
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!unlockedAudioCtx) {
+                unlockedAudioCtx = new AudioCtx();
+            }
+            if (unlockedAudioCtx.state === 'suspended') {
+                await unlockedAudioCtx.resume();
+            }
+
+            const mimeType = audioPart.inlineData.mimeType || '';
+            const rateMatch = mimeType.match(/rate=(\d+)/);
+            const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+
+            let audioBuffer;
+            if (mimeType.includes('pcm') || mimeType.includes('L16') || !mimeType.includes('mp3') && !mimeType.includes('wav')) {
+                audioBuffer = decodePcmBase64ToAudioBuffer(audioPart.inlineData.data, unlockedAudioCtx, sampleRate);
+            } else {
+                const binary = atob(audioPart.inlineData.data);
+                const buf = new ArrayBuffer(binary.length);
+                const view = new Uint8Array(buf);
+                for (let i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);
+                audioBuffer = await unlockedAudioCtx.decodeAudioData(buf);
+            }
+
+            if (activeFallbackAbort) return;
+
+            const source = unlockedAudioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.playbackRate.value = rate;
+            source.connect(unlockedAudioCtx.destination);
+            activeAudioSource = source;
+
+            source.onended = () => {
+                if (activeAudioSource === source) activeAudioSource = null;
+                setSpeakingVisualState(false);
+            };
+
+            source.start(0);
         }
 
-        function speakText(text, langCode, customRate = null) {
+        function speakWithBrowserNative(text, langCode, rate) {
+            return new Promise((resolve, reject) => {
+                if (!('speechSynthesis' in window)) {
+                    reject(new Error('NO_SPEECH_SYNTHESIS'));
+                    return;
+                }
+
+                if (availableVoices.length === 0) {
+                    availableVoices = window.speechSynthesis.getVoices();
+                }
+
+                const targetPrefix = langCode.split('-')[0].toLowerCase();
+                const exactVoice = availableVoices.find(v => v.lang && v.lang.toLowerCase() === langCode.toLowerCase());
+                const prefixVoice = availableVoices.find(v => v.lang && v.lang.toLowerCase().startsWith(targetPrefix));
+                const chosenVoice = exactVoice || prefixVoice;
+
+                if (!chosenVoice) {
+                    reject(new Error('NO_MATCHING_LOCAL_VOICE'));
+                    return;
+                }
+
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = langCode;
+                utterance.rate = rate;
+                utterance.pitch = 1.0;
+                utterance.voice = chosenVoice;
+
+                let started = false;
+                const timer = setTimeout(() => {
+                    if (!started) {
+                        window.speechSynthesis.cancel();
+                        reject(new Error('NATIVE_SPEECH_TIMEOUT'));
+                    }
+                }, 650);
+
+                utterance.onstart = () => {
+                    started = true;
+                    clearTimeout(timer);
+                    setSpeakingVisualState(true, langCode);
+                };
+
+                utterance.onend = () => {
+                    clearTimeout(timer);
+                    setSpeakingVisualState(false);
+                    resolve();
+                };
+
+                utterance.onerror = (e) => {
+                    clearTimeout(timer);
+                    setSpeakingVisualState(false);
+                    reject(e);
+                };
+
+                window.speechSynthesis.resume();
+                window.speechSynthesis.speak(utterance);
+            });
+        }
+
+        async function speakText(text, langCode, customRate = null) {
             if (!text || !text.trim()) return;
             stopAllAudio();
 
             const rate = customRate !== null ? customRate : appState.speechRate;
-            const targetPrefix = langCode.split('-')[0].toLowerCase();
 
-            if (!('speechSynthesis' in window)) {
-                playOnlineTtsFallback(text, langCode, rate);
-                return;
-            }
-
-            if (availableVoices.length === 0) {
-                availableVoices = window.speechSynthesis.getVoices();
-            }
-
-            const exactVoice = availableVoices.find(v => v.lang && v.lang.toLowerCase() === langCode.toLowerCase());
-            const prefixVoice = availableVoices.find(v => v.lang && v.lang.toLowerCase().startsWith(targetPrefix));
-            const chosenVoice = exactVoice || prefixVoice;
-
-            if (!chosenVoice && targetPrefix === 'th') {
-                playOnlineTtsFallback(text, langCode, rate);
-                return;
-            }
-
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = langCode;
-            utterance.rate = rate;
-            utterance.pitch = 1.0;
-            if (chosenVoice) {
-                utterance.voice = chosenVoice;
-            }
-
-            let speechStarted = false;
-            const watchdogTimer = setTimeout(() => {
-                if (!speechStarted) {
-                    window.speechSynthesis.cancel();
-                    playOnlineTtsFallback(text, langCode, rate);
+            try {
+                // 1ª tentativa: Voz neural nativa via Gemini API (funciona no Chrome, Safari, iOS, Android e GitHub Pages sem bloqueio CORS!)
+                await playGeminiNativeTts(text, langCode, rate);
+            } catch (geminiErr) {
+                console.warn('Fallback para voz nativa do navegador:', geminiErr.message);
+                try {
+                    // 2ª tentativa (Offline / sem chave): Voz instalada no próprio aparelho
+                    await speakWithBrowserNative(text, langCode, rate);
+                } catch (nativeErr) {
+                    setSpeakingVisualState(false);
+                    if (!getActiveApiKey()) {
+                        showToast('Configure sua chave da API Gemini na engrenagem (⚙️) para ativar a voz em tailandês.', 'warning');
+                    } else {
+                        showToast('Não foi possível reproduzir o áudio agora. Verifique o volume ou a conexão.', 'warning');
+                    }
                 }
-            }, 700);
-
-            utterance.onstart = () => {
-                speechStarted = true;
-                clearTimeout(watchdogTimer);
-                setSpeakingVisualState(true, langCode);
-            };
-
-            utterance.onend = () => {
-                clearTimeout(watchdogTimer);
-                setSpeakingVisualState(false);
-            };
-
-            utterance.onerror = () => {
-                clearTimeout(watchdogTimer);
-                setSpeakingVisualState(false);
-                if (!speechStarted) {
-                    playOnlineTtsFallback(text, langCode, rate);
-                }
-            };
-
-            window.speechSynthesis.resume();
-            window.speechSynthesis.speak(utterance);
+            }
         }
 
         function replayCurrentAudio(customRate = null) {
